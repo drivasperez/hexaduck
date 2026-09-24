@@ -137,6 +137,56 @@ describe('Flock bots', () => {
     expect(bots.length).toBe(10);
   });
 
+  // Regression: a bot aiming straight at a crumb just beside it, inside its turning circle,
+  // circled it forever without ever getting close enough to eat it.
+  it("doesn't orbit a crumb inside its turning circle", () => {
+    const w = world();
+    const d = place(w, 0, 0, 0, 16);
+    d.bot = true;
+    const radius = CONFIG.speed / (CONFIG.turn / (1 + d.length / 120));
+    const crumb = addCrumb(w, 0, radius * 0.6, 1);  // off to the side, closer than the turning radius
+    let turned = 0, eaten = false;
+    for (let i = 0; i < 20 * 8 && !eaten; i++) {
+      const before = d.angle;
+      steerBot(w, d, buildGrid(w));
+      step(w);
+      turned += Math.abs(Math.atan2(Math.sin(d.angle - before), Math.cos(d.angle - before)));
+      eaten = !w.crumbs.has(crumb.id);
+    }
+    expect(eaten).toBe(true);
+    expect(turned).toBeLessThan(3 * Math.PI);
+  });
+
+  // Regression for the same bug at pond scale: bots used to be mid-loop in about nine of every
+  // ten three-second stretches.
+  it('rarely loop in a crowded pond', () => {
+    const w = newWorld(mulberry(4));
+    for (let i = 0; i < 10; i++) spawnDuck(w, `Bot ${i}`, i, true);
+    const turns = new Map<number, number[]>();
+    let windows = 0, loops = 0;
+    for (let i = 0; i < 20 * 60; i++) {
+      const before = new Map([...w.ducks.values()].map(d => [d.id, d.angle]));
+      const grid = buildGrid(w);
+      for (const d of w.ducks.values()) steerBot(w, d, grid);
+      step(w);
+      for (const d of w.ducks.values()) {
+        const b = before.get(d.id);
+        if (b === undefined) continue;
+        const t = turns.get(d.id) ?? [];
+        t.push(Math.atan2(Math.sin(d.angle - b), Math.cos(d.angle - b)));
+        if (t.length > 60) t.shift();
+        turns.set(d.id, t);
+        if (t.length === 60 && i % 20 === 0) {
+          windows++;
+          if (Math.abs(t.reduce((a, c) => a + c, 0)) > 2 * Math.PI) loops++;
+        }
+      }
+      while (w.ducks.size < 10) spawnDuck(w, 'Bot', 0, true);
+    }
+    expect(windows).toBeGreaterThan(300);
+    expect(loops / windows).toBeLessThan(0.1);
+  });
+
   it('steers away from the shore', () => {
     const w = world();
     const d = place(w, CONFIG.radius - 120, 0, 0);

@@ -279,28 +279,57 @@ export function scatter(world: World, id: number) {
 // A bot heads for the most valuable crumb nearby, but first checks a fan of directions ahead
 // and steers away from any that run into ducklings or the shore.
 export function steerBot(world: World, d: Duck, grid: Grid) {
-  let goal = d.angle, goalScore = -Infinity;
+  let goal = d.angle, goalScore = -Infinity, tooClose = -Infinity;
+  // A crumb inside either of the tightest circles the duck can swim can't be reached by turning
+  // towards it: chasing it just orbits it, and so does settling for food behind the duck.
+  const circle = CONFIG.speed / turnRate(d.length), reach = CONFIG.headRadius + 12;
+  const nx = -Math.sin(d.angle) * circle, ny = Math.cos(d.angle) * circle;
   for (const c of world.crumbs.values()) {
     const dx = c.x - d.x, dy = c.y - d.y, dist = Math.hypot(dx, dy);
     if (dist > 700) continue;
-    const score = c.value * 3 - dist / 200;
-    if (score > goalScore) { goalScore = score; goal = Math.atan2(dy, dx); }
+    // Worth, less the seconds it would take to turn and swim there, so food ahead wins over
+    // food behind that would need a loop to reach.
+    const toward = Math.atan2(dy, dx);
+    const seconds = dist / CONFIG.speed + Math.abs(wrapAngle(toward - d.angle)) / turnRate(d.length);
+    const score = c.value * 3 - seconds * 1.2;
+    const inside = dist > reach && (Math.hypot(dx - nx, dy - ny) < circle - reach || Math.hypot(dx + nx, dy + ny) < circle - reach);
+    if (inside) tooClose = Math.max(tooClose, c.value * 3 - dist / CONFIG.speed * 1.2);
+    else if (score > goalScore) { goalScore = score; goal = toward; }
   }
-  if (goalScore === -Infinity) goal = Math.atan2(-d.y, -d.x);  // nothing nearby: head for the middle
+  // The best food is too close to turn onto: swim straight until it's far enough to come back for.
+  if (tooClose > goalScore) { goal = d.angle; goalScore = tooClose; }
+  else if (goalScore === -Infinity) goal = Math.atan2(-d.y, -d.x);  // nothing nearby: head for the middle
 
-  const look = 90 + d.length * 0.6;
+  // Try swimming towards each of a fan of headings for the next 0.64 s, turning at the duck's
+  // real rate, and see which of those curved paths runs into ducklings or the shore.
+  const rate = turnRate(d.length), dt = 0.08;
+  // Where nearby ducks' heads are heading: their ducklings will soon be there too.
+  const ahead: number[] = [];
+  for (const o of world.ducks.values()) {
+    if (o === d || Math.hypot(o.x - d.x, o.y - d.y) > 400) continue;
+    for (const t of [0.15, 0.3, 0.45]) ahead.push(o.x + Math.cos(o.angle) * CONFIG.speed * t, o.y + Math.sin(o.angle) * CONFIG.speed * t);
+  }
+  const nearHead = (x: number, y: number) => {
+    for (let i = 0; i < ahead.length; i += 2) if (Math.hypot(ahead[i] - x, ahead[i + 1] - y) < CONFIG.headRadius * 2 + 10) return true;
+    return false;
+  };
   let best = goal, bestCost = Infinity;
   for (const off of [0, -0.4, 0.4, -0.8, 0.8, -1.3, 1.3, -2, 2, Math.PI]) {
     const a = d.angle + off;
-    let danger = 0;
-    for (const s of [0.35, 0.7, 1]) {
-      const px = d.x + Math.cos(a) * look * s, py = d.y + Math.sin(a) * look * s;
-      if (Math.hypot(px, py) > CONFIG.radius - 60) danger += 3;
-      if (hitAt(grid, px, py, CONFIG.headRadius + 6, d.id) !== null) danger += 4 - s * 2;
+    let x = d.x, y = d.y, h = d.angle, danger = 0;
+    for (let k = 1; k <= 8; k++) {
+      const diff = wrapAngle(a - h);
+      h += Math.max(-rate * dt, Math.min(rate * dt, diff));
+      x += Math.cos(h) * CONFIG.speed * dt;
+      y += Math.sin(h) * CONFIG.speed * dt;
+      // Sooner collisions count for more.
+      if (Math.hypot(x, y) > CONFIG.radius - 40) danger += 9 - k;
+      if (hitAt(grid, x, y, CONFIG.headRadius + 8, d.id) !== null) danger += (9 - k) * 2;
+      else if (nearHead(x, y)) danger += 9 - k;
     }
     const cost = danger * 10 + Math.abs(wrapAngle(a - goal));
     if (cost < bestCost) { bestCost = cost; best = a; }
   }
   d.target = best;
-  d.boost = d.length > 12 && goalScore > 2 && bestCost < 1 && world.random() < 0.05;
+  d.boost = d.length > 12 && goalScore > 1.5 && bestCost < 1 && world.random() < 0.05;
 }
