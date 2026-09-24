@@ -1,4 +1,5 @@
 import { createLeaderboard, savedName } from '/shared/leaderboard.js';
+import { createRoomConnection, renderTop } from '/shared/room.js';
 
 // Flock's client. The pond's Durable Object (src/flock/pond.ts) runs the game; this draws it.
 // Snapshots arrive 20 times a second and are drawn about 110 ms behind so ducks can be
@@ -24,34 +25,22 @@ import { createLeaderboard, savedName } from '/shared/leaderboard.js';
   const BODY = ['#E9E4D8', '#8B6B4A', '#6E9C7E', '#C9A26B', '#7086A8', '#B86A5A', '#8A74B8', '#D98C3B', '#5BA8BA', '#A8A8A8'];
   const HEAD = ['#2F6B4A', '#5A4230', '#2F5A42', '#8A6A3E', '#3E4E6E', '#7A3A2E', '#4E3E78', '#8A5520', '#2E6878', '#5E5E5E'];
   const $ = id => document.getElementById(id);
-  const params = new URLSearchParams(location.search);
-  const fixedRoom = params.get('room');
 
   // ---------- state ----------
-  let ws = null, room = 1, cfg = null, myId = null, state = 'menu';
+  let cfg = null, myId = null, state = 'menu';
   let snaps = [];               // [{ time, ducks: Map<id, [x, y, angle, length, boost, safe]> }]
   const names = new Map();      // id -> { name, color, bot }
   const crumbs = new Map();     // id -> { x, y, v, born }
   const trails = new Map();     // id -> flat [x, y, ...] newest first
   const bursts = [];            // scatter effects: { x, y, t }
-  let cam = { x: 0, y: 0, zoom: 1 }, clock = 0, myLength = 0, reconnectAt = 0;
+  let cam = { x: 0, y: 0, zoom: 1 }, clock = 0, myLength = 0;
 
   // ---------- connection ----------
-  function connect() {
-    const url = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api/flock?room=${fixedRoom || `pond-${room}`}`;
-    const sock = new WebSocket(url);
-    ws = sock;
-    sock.addEventListener('message', e => { if (ws === sock) onMessage(JSON.parse(e.data)); });
-    sock.addEventListener('close', () => {
-      if (ws !== sock) return;
-      ws = null; myId = null;
-      if (state === 'play') showMenu();
-      status('Lost the connection. Reconnecting…');
-      reconnectAt = performance.now() + 1500;
-    });
-  }
-
-  function send(msg) { if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg)); }
+  const conn = createRoomConnection({
+    path: '/api/flock', prefix: 'pond', rooms: ROOMS, onMessage, onStatus: status,
+    onLost() { myId = null; if (state === 'play') showMenu(); },
+  });
+  const send = msg => conn.send(msg);
 
   function onMessage(m) {
     switch (m.t) {
@@ -63,11 +52,6 @@ import { createLeaderboard, savedName } from '/shared/leaderboard.js';
         status('');
         if (state === 'joining') join();
         break;
-      case 'full':
-        // Try the next room along, unless a room was asked for.
-        if (!fixedRoom && room < ROOMS) { room++; ws = null; connect(); }
-        else status('Every pond is full right now. Try again in a minute.');
-        break;
       case 'you':
         myId = m.id; state = 'play';
         $('panel').hidden = true; $('dead').hidden = true; $('hud').hidden = false;
@@ -78,7 +62,7 @@ import { createLeaderboard, savedName } from '/shared/leaderboard.js';
         for (const row of m.d) addName(row);
         break;
       case 's': onSnapshot(m); break;
-      case 'top': renderTop(m); break;
+      case 'top': renderTop($('room-top'), $('room-count'), m, myId !== null ? names.get(myId)?.name : null, { verb: 'swimming' }); break;
       case 'dead': onDead(m); break;
     }
   }
@@ -106,19 +90,6 @@ import { createLeaderboard, savedName } from '/shared/leaderboard.js';
     }
   }
 
-  function renderTop(m) {
-    $('room-count').textContent = m.humans === 1 ? '1 person swimming' : `${m.humans} people swimming`;
-    const me = myId !== null ? names.get(myId)?.name : null;
-    $('room-top').replaceChildren(...m.l.map(([name, len, bot]) => {
-      const li = document.createElement('li');
-      if (bot) li.className = 'bot'; else if (name === me) li.className = 'me';
-      const a = document.createElement('span'); a.textContent = name;
-      const b = document.createElement('span'); b.textContent = String(len);
-      li.append(a, b);
-      return li;
-    }));
-  }
-
   // ---------- screens ----------
   function status(text) { $('status').textContent = text; }
 
@@ -130,7 +101,7 @@ import { createLeaderboard, savedName } from '/shared/leaderboard.js';
   function join() {
     const name = $('join-name').value.trim() || savedName() || '';
     if (name) Board.setName(name);
-    if (!ws || ws.readyState !== WebSocket.OPEN) { state = 'joining'; status('Connecting…'); return; }
+    if (!conn.open) { state = 'joining'; status('Connecting…'); return; }
     state = 'joining';
     myLength = 0;
     unlockAudio();
@@ -429,7 +400,7 @@ import { createLeaderboard, savedName } from '/shared/leaderboard.js';
     if (!(dt > 0)) dt = 0;
     if (dt > 0.1) dt = 0.1;
     clock += dt;
-    if (!ws && now > reconnectAt) connect();
+    conn.poll(now);
 
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
     ctx.fillStyle = '#1B6F85'; ctx.fillRect(0, 0, W, H);
@@ -462,6 +433,5 @@ import { createLeaderboard, savedName } from '/shared/leaderboard.js';
     document.querySelector('.home-link').hidden = state === 'play';
     requestAnimationFrame(frame);
   }
-  connect();
   requestAnimationFrame(frame);
 })();
