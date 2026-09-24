@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Hexaduck</title>
+<meta name="description" content="Steer the duck around the hexagon, dodge the emissions and hold on until net zero.">
+<meta name="theme-color" content="#0F3B4C">
+<meta property="og:title" content="Hexaduck">
+<meta property="og:description" content="Dodge the emissions. Hold on until net zero.">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<canvas id="c" tabindex="0" role="img" aria-label="Hexaduck: steer the duck around the hexagon and dodge the incoming walls"></canvas>
+
+<button id="board-btn" type="button">Leaderboard</button>
+
+<div id="board" hidden role="dialog" aria-modal="true" aria-labelledby="board-title">
+  <div class="board-panel">
+    <header>
+      <h2 id="board-title">Leaderboard</h2>
+      <button class="board-close" type="button" aria-label="Close leaderboard">×</button>
+    </header>
+    <div class="board-tabs" role="tablist">
+      <button type="button" role="tab" data-mode="0">Scope 1</button>
+      <button type="button" role="tab" data-mode="1">Scope 2</button>
+      <button type="button" role="tab" data-mode="2">Scope 3</button>
+    </div>
+    <ol id="board-list"></ol>
+    <p id="board-note"></p>
+    <form id="board-form" hidden>
+      <label for="board-input" id="board-form-label">Pick a name to post your runs as</label>
+      <div class="board-row">
+        <input id="board-input" name="name" maxlength="16" autocomplete="nickname" spellcheck="false" enterkeyhint="send" placeholder="Your name">
+        <button type="submit">Post</button>
+      </div>
+      <p id="board-error" role="alert"></p>
+    </form>
+    <p id="board-who" hidden>Posting runs as <span></span>. <button type="button">Change</button></p>
+  </div>
+</div>
+
+<script type="module" src="/game.js"></script>
+</body>
+</html>
