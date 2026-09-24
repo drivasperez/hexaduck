@@ -13,10 +13,11 @@
     {
       "binding": "DB",
       "database_name": "hexaduck",
-      // Replace with the id printed by `npx wrangler d1 create hexaduck`.
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "6768a785-24bc-41f7-a8a4-08f3f1300e76",
       "migrations_dir": "migrations"
     }
   ],
+  // Cloudflare creates the DNS record and certificate for this on deploy; drpz.xyz must be a zone on this account.
+  "routes": [{ "pattern": "hexaduck.drpz.xyz", "custom_domain": true }],
   "observability": { "enabled": true }
 }
