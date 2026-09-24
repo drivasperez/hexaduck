@@ -14,6 +14,8 @@ export const GAMES: Record<string, Game> = {
   hexaduck: { modes: 3, scale: 1000, maxPerSecond: 1 },
   // Metres run, stored in whole metres. The duck's top speed is 45 m/s.
   runoff: { modes: 1, scale: 1, maxPerSecond: 50 },
+  // Metres flown, stored in whole metres. The duck's top speed is 80 m/s, during a tailwind.
+  tailwind: { modes: 1, scale: 1, maxPerSecond: 85 },
 };
 
 export function getGame(id: unknown): [string, Game] | null {

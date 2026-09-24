@@ -176,6 +176,18 @@ describe('Runoff scores', () => {
   });
 });
 
+describe('Tailwind scores', () => {
+  it('accepts a flight at top speed and refuses one faster', async () => {
+    const { maxPerSecond } = GAMES.tailwind;
+    const ok = await runStartedAgo(30_000, 'tailwind');
+    expect((await post('/api/scores', { runId: ok, name: 'Swift', score: maxPerSecond * 30 })).status).toBe(200);
+    const cheat = await runStartedAgo(30_000, 'tailwind');
+    const tooFar = maxPerSecond * (30 + CLOCK_SLACK_MS / 1000) + 10;
+    expect((await post('/api/scores', { runId: cheat, name: 'Cheat', score: tooFar })).status).toBe(422);
+    expect(await board('tailwind')).toEqual([{ name: 'Swift', score: maxPerSecond * 30 }]);
+  });
+});
+
 describe('GET /api/scores', () => {
   it(`returns at most ${LEADERBOARD_SIZE} rows, best first`, async () => {
     for (let i = 1; i <= LEADERBOARD_SIZE + 3; i++) await submit(`Duck ${i}`, i);

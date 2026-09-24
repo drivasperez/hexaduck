@@ -4,6 +4,7 @@ Small duck-themed arcade games with a shared leaderboard, deployed as a Cloudfla
 
 - [Hexaduck](public/hexaduck/) is a Super Hexagon clone: steer around the hexagon and dodge the walls.
 - [Runoff](public/runoff/) is a Canabalt clone: run across rooftops above rising floodwater.
+- [Tailwind](public/tailwind/) is a Tiny Wings clone: dive down hills and fly off the tops, racing the sunset across the islands. Add `?day=5` to the URL for a five-second day, which the e2e tests use; it can only make the day shorter.
 
 Each game lives in its own folder under `public/` as plain HTML, CSS and JavaScript with no build step, and `public/index.html` is the landing page that links to them. `public/shared/` holds the leaderboard client and its styles, which every game uses. `src/` is a small Worker that only handles `/api/*`; every other request is served straight from the asset store.
 
@@ -13,7 +14,7 @@ Each game lives in its own folder under `public/` as plain HTML, CSS and JavaScr
 npm install
 npm run db:migrate:local   # create or update the local D1 database
 npm run dev                # http://localhost:8787
-npm test                   # API, migration and level-generation tests, run inside workerd
+npm test                   # API, migration, level and physics tests, run inside workerd
 npm run test:e2e           # browser tests against wrangler dev (desktop and mobile)
 npm run typecheck
 ```

@@ -39,7 +39,7 @@ test('the arcade links to every game', async ({ page }) => {
   const errors = collectErrors(page);
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Duck Arcade' })).toBeVisible();
-  for (const [name, href] of [['Hexaduck', '/hexaduck/'], ['Runoff', '/runoff/']]) {
+  for (const [name, href] of [['Hexaduck', '/hexaduck/'], ['Runoff', '/runoff/'], ['Tailwind', '/tailwind/']]) {
     await expect(page.getByRole('link', { name: new RegExp(name) })).toHaveAttribute('href', href);
   }
   expect(errors).toEqual([]);
@@ -82,4 +82,14 @@ test('the name chosen in one game carries over to the other', async ({ page }) =
   await page.locator('#board-btn').click();
   await expect(page.locator('#board-who')).toContainText(name);
   await expect(page.locator('#board-form')).toBeHidden();
+});
+
+test('a Tailwind flight ends at sunset and can be posted', async ({ page }) => {
+  const errors = collectErrors(page);
+  // A short day so the test doesn't wait 45 seconds for the sun to set.
+  await page.goto('/tailwind/?day=3');
+  const name = uniqueName();
+  await playAndPost(page, name, start(page));
+  await expect(page.locator('#board-list li').first()).toContainText(/\d+ m$/);
+  expect(errors).toEqual([]);
 });
