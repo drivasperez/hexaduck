@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Flock</title>
+<meta name="description" content="A multiplayer duck pond. Gather ducklings, grow the longest line, and don't swim into anyone else's.">
+<meta name="theme-color" content="#1B6F85">
+<meta property="og:title" content="Flock">
+<meta property="og:description" content="Gather the longest line of ducklings in a pond full of other players.">
+<link rel="icon" href="/flock/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/shared/leaderboard.css">
+<link rel="stylesheet" href="/flock/style.css">
+</head>
+<body>
+<canvas id="c" tabindex="0" role="img" aria-label="Flock: a pond of ducks, each trailed by a line of ducklings"></canvas>
+<a class="home-link" href="/">‹ All games</a>
+
+<div id="hud" hidden>
+  <p id="hud-len" aria-live="polite"></p>
+  <div id="room">
+    <p id="room-count"></p>
+    <ol id="room-top"></ol>
+  </div>
+</div>
+
+<div id="panel" class="panel">
+  <h1>Flock</h1>
+  <p class="lede">Gather ducklings. Grow the longest line in the pond. Don't swim into anyone else's.</p>
+  <form id="join">
+    <label for="join-name">Your name</label>
+    <div class="board-row">
+      <input id="join-name" maxlength="16" autocomplete="nickname" spellcheck="false" enterkeyhint="go" placeholder="Duck">
+      <button type="submit">Swim</button>
+    </div>
+  </form>
+  <p id="status" role="status"></p>
+  <p class="how" data-for="mouse">Point to steer. Hold the mouse button or space to paddle faster, which costs ducklings.</p>
+  <p class="how" data-for="touch">Touch and drag to steer. Hold Boost to paddle faster, which costs ducklings.</p>
+</div>
+
+<div id="dead" class="panel" hidden>
+  <h2>Your flock scattered</h2>
+  <p id="dead-peak" class="big"></p>
+  <p id="dead-why"></p>
+  <p id="dead-board"></p>
+  <button id="again" type="button">Swim again</button>
+  <p class="how" data-for="mouse">or press space</p>
+</div>
+
+<button id="boost" type="button" hidden>Boost</button>
+
+<script type="module" src="/flock/game.js"></script>
+</body>
+</html>

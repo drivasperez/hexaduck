@@ -59,10 +59,16 @@
       <p>Race the sunset across the islands. Dive down the hills, fly off the tops, and land along the slopes.</p>
       <p class="top"></p>
     </a>
+    <a class="game" href="/flock/" data-game="flock" data-format="ducklings">
+      <img src="/flock/favicon.svg" alt="">
+      <h2>Flock</h2>
+      <p>A pond full of other players. Gather the longest line of ducklings, and don't swim into anyone else's.</p>
+      <p class="top"></p>
+    </a>
   </div>
 </main>
 <script type="module">
-  const FORMAT = { seconds: s => `${s.toFixed(2)} s`, metres: m => `${m} m` };
+  const FORMAT = { seconds: s => `${s.toFixed(2)} s`, metres: m => `${m} m`, ducklings: n => `${n} ducklings` };
   for (const card of document.querySelectorAll('.game')) {
     const top = card.querySelector('.top');
     fetch(`/api/scores?game=${card.dataset.game}&mode=0`)

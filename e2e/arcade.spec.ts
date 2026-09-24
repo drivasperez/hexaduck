@@ -39,7 +39,7 @@ test('the arcade links to every game', async ({ page }) => {
   const errors = collectErrors(page);
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Duck Arcade' })).toBeVisible();
-  for (const [name, href] of [['Hexaduck', '/hexaduck/'], ['Runoff', '/runoff/'], ['Tailwind', '/tailwind/']]) {
+  for (const [name, href] of [['Hexaduck', '/hexaduck/'], ['Runoff', '/runoff/'], ['Tailwind', '/tailwind/'], ['Flock', '/flock/']]) {
     await expect(page.getByRole('link', { name: new RegExp(name) })).toHaveAttribute('href', href);
   }
   expect(errors).toEqual([]);
@@ -91,5 +91,22 @@ test('a Tailwind flight ends at sunset and can be posted', async ({ page }) => {
   const name = uniqueName();
   await playAndPost(page, name, start(page));
   await expect(page.locator('#board-list li').first()).toContainText(/\d+ m$/);
+  expect(errors).toEqual([]);
+});
+
+test('two players in the same Flock pond see each other', async ({ browser }) => {
+  // A room of its own, so other tests and bots in the default ponds don't interfere.
+  const room = `e2e-${Math.random().toString(36).slice(2, 8)}`;
+  const pages = await Promise.all([browser.newPage(), browser.newPage()]);
+  const errors = pages.flatMap(collectErrors);
+  for (const [i, page] of pages.entries()) {
+    await page.goto(`/flock/?room=${room}`);
+    await page.locator('#join-name').fill(`Swimmer ${i + 1}`);
+    await page.locator('#join button').click();
+    await expect(page.locator('#hud-len')).toHaveText('4 ducklings');
+  }
+  for (const page of pages) await expect(page.locator('#room-count')).toHaveText('2 people swimming', { timeout: 5000 });
+  await pages[0].close();
+  await expect(pages[1].locator('#room-count')).toHaveText('1 person swimming', { timeout: 5000 });
   expect(errors).toEqual([]);
 });

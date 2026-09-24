@@ -7,6 +7,8 @@ export interface Game {
   modes: number;
   scale: number;
   maxPerSecond: number;
+  // Scores are recorded by the server itself (see src/flock/pond.ts), so clients can't post them.
+  serverOnly?: boolean;
 }
 
 export const GAMES: Record<string, Game> = {
@@ -16,6 +18,8 @@ export const GAMES: Record<string, Game> = {
   runoff: { modes: 1, scale: 1, maxPerSecond: 50 },
   // Metres flown, stored in whole metres. The duck's top speed is 80 m/s, during a tailwind.
   tailwind: { modes: 1, scale: 1, maxPerSecond: 85 },
+  // Most ducklings in a line at once. The pond's Durable Object runs the game and records these.
+  flock: { modes: 1, scale: 1, maxPerSecond: 0, serverOnly: true },
 };
 
 export function getGame(id: unknown): [string, Game] | null {

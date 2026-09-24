@@ -188,6 +188,14 @@ describe('Tailwind scores', () => {
   });
 });
 
+describe('server-recorded games', () => {
+  it('refuses runs for Flock, whose scores only the server records', async () => {
+    const res = await post('/api/runs', { game: 'flock', mode: 0 });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: 'scores for this game are recorded by the server' });
+  });
+});
+
 describe('GET /api/scores', () => {
   it(`returns at most ${LEADERBOARD_SIZE} rows, best first`, async () => {
     for (let i = 1; i <= LEADERBOARD_SIZE + 3; i++) await submit(`Duck ${i}`, i);
@@ -209,8 +217,10 @@ describe('GET /api/scores', () => {
 });
 
 describe('entry module', () => {
-  // Regression: workerd refuses to start if the entry module has non-handler named exports.
-  it('only has a default export', () => {
-    expect(Object.keys(entry)).toEqual(['default']);
+  // Regression: workerd refuses to start if the entry module exports anything other than
+  // handlers and Durable Object classes.
+  it('only exports the handler and Durable Object classes', () => {
+    expect(Object.keys(entry).sort()).toEqual(['Pond', 'default']);
+    expect(typeof entry.Pond).toBe('function');
   });
 });

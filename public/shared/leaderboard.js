@@ -9,6 +9,8 @@ const LEGACY_NAME_KEY = 'hexaduck-name';
 // Mirrors the server's rule in src/leaderboard.ts.
 const NAME_RE = /^[\p{L}\p{N} _.'-]{1,16}$/u;
 
+export function savedName() { return loadName(); }
+
 function loadName() {
   try { return localStorage.getItem(NAME_KEY) || localStorage.getItem(LEGACY_NAME_KEY) || ''; } catch (e) { return ''; }
 }
@@ -188,5 +190,8 @@ export function createLeaderboard({ game, modes, format, onClose = () => {} }) {
   });
   for (const type of ['pointerdown', 'pointerup']) button.addEventListener(type, e => e.stopPropagation());
 
-  return Object.assign(board, { startRun, finishRun, open, close, isOpen });
+  // For games that pick the player's name themselves (Flock asks for it before joining).
+  function setName(n) { name = n; saveName(n); }
+
+  return Object.assign(board, { startRun, finishRun, open, close, isOpen, setName });
 }

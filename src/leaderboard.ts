@@ -51,6 +51,7 @@ export async function startRun(req: Request, env: Env): Promise<Response> {
   const found = getGame(body?.game);
   if (!found) return error(400, 'unknown game');
   const [gameId, game] = found;
+  if (game.serverOnly) return error(400, 'scores for this game are recorded by the server');
   const mode = parseMode(game, body?.mode);
   if (mode === null) return error(400, 'invalid mode');
   const now = Date.now();
@@ -86,27 +87,27 @@ export async function submitScore(req: Request, env: Env): Promise<Response> {
   if (score > game.maxPerSecond * elapsedSeconds) return error(422, 'score is higher than the run allows');
   const stored = Math.round(score * game.scale);
 
+  const { rank, best, improved } = await recordScore(env, run.game, run.mode, name, stored, now);
+  return json({ game: run.game, mode: run.mode, name, rank, best: best / game.scale, improved });
+}
+
+// Keeps `name`'s best score on a board and reports where it now stands. `stored` is in the
+// game's stored unit. Used for client-posted runs and by games whose server records scores.
+export async function recordScore(env: Env, gameId: string, mode: number, name: string, stored: number, now = Date.now()) {
   const [upsert, standing] = await env.DB.batch<Record<string, number>>([
     env.DB.prepare(
       `INSERT INTO scores (game, mode, name, score, created_at) VALUES (?1, ?2, ?3, ?4, ?5)
        ON CONFLICT (game, mode, name) DO UPDATE SET score = excluded.score, created_at = excluded.created_at, name = excluded.name
        WHERE excluded.score > scores.score
        RETURNING score`,
-    ).bind(run.game, run.mode, name, stored, now),
+    ).bind(gameId, mode, name, stored, now),
     env.DB.prepare(
       `SELECT me.score AS best, 1 + (SELECT COUNT(*) FROM scores o WHERE o.game = me.game AND o.mode = me.mode AND o.score > me.score) AS rank
        FROM scores me WHERE me.game = ?1 AND me.mode = ?2 AND me.name = ?3`,
-    ).bind(run.game, run.mode, name),
+    ).bind(gameId, mode, name),
   ]);
   const { best, rank } = standing.results[0];
-  return json({
-    game: run.game,
-    mode: run.mode,
-    name,
-    rank,
-    best: best / game.scale,
-    improved: upsert.results.length > 0,
-  });
+  return { rank, best, improved: upsert.results.length > 0 };
 }
 
 export async function listScores(url: URL, env: Env): Promise<Response> {
