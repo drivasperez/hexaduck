@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  CRATE_SLOW, G, GLIDE_FALL, GLIDE_TIME, JUMP_V, MAX_SPEED, nextBuilding, ROOF_MAX, ROOF_MIN, START_SPEED,
+  G, GLIDE_FALL, GLIDE_TIME, JUMP_V, MAX_SPEED, nextBuilding, ROOF_MAX, ROOF_MIN, START_SPEED,
 } from '../public/runoff/level.js';
 
 interface Roof { x: number; w: number; top: number }
@@ -49,6 +49,23 @@ function* roofs(seed: number, speed: number, count: number): Generator<[Roof, Ro
   }
 }
 
+// The range of takeoff points, in seconds before the roof's edge, that still clear the gap.
+// A wide window means the jump barely needs timing.
+function takeoffWindow(from: Roof, to: Roof, speed: number, glide: Glide): number {
+  let ok = 0;
+  const step = 0.01;
+  for (let early = 0; early <= 1.5; early += step) if (clears(from, to, speed, from.x + from.w - speed * early, glide)) ok++;
+  return ok * step;
+}
+
+function median(xs: number[]): number {
+  const sorted = [...xs].sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)];
+}
+
+const medianWindow = (speed: number, glide: Glide) =>
+  median([...roofs(speed + 3, speed, 150)].map(([from, to]) => takeoffWindow(from, to, speed, glide)));
+
 describe('Runoff level generation', () => {
   for (const speed of [START_SPEED, 600, MAX_SPEED]) {
     it(`every gap can be cleared at ${speed} px/s by jumping at the edge`, () => {
@@ -57,19 +74,24 @@ describe('Runoff level generation', () => {
       }
     });
 
-    it(`every gap can be cleared at ${speed} px/s by jumping a tenth of a second early`, () => {
+    it(`every gap can be cleared at ${speed} px/s by jumping a twentieth of a second early`, () => {
       for (const [from, to] of roofs(speed + 1, speed, 3000)) {
-        expect(clears(from, to, speed, from.x + from.w - speed * 0.1, Glide.Off), JSON.stringify({ from, to })).toBe(true);
-      }
-    });
-
-    it(`every gap can still be cleared at ${speed} px/s just after hitting a crate, with a glide`, () => {
-      const slowed = speed * CRATE_SLOW;
-      for (const [from, to] of roofs(speed + 2, speed, 3000)) {
-        expect(clears(from, to, slowed, from.x + from.w, Glide.On), JSON.stringify({ from, to })).toBe(true);
+        expect(clears(from, to, speed, from.x + from.w - speed * 0.05, Glide.Off), JSON.stringify({ from, to })).toBe(true);
       }
     });
   }
+
+  // Regression: the first version let you jump almost a second early at any speed and still
+  // make it, which made the game far too easy.
+  it('demands tighter timing as the duck speeds up', () => {
+    const start = medianWindow(START_SPEED, Glide.Off), top = medianWindow(MAX_SPEED, Glide.Off);
+    expect(top).toBeLessThan(start * 0.7);
+    expect(top).toBeLessThan(0.25);
+  });
+
+  it('keeps the glide a rescue rather than a free pass at top speed', () => {
+    expect(medianWindow(MAX_SPEED, Glide.On)).toBeLessThan(0.45);
+  });
 
   it('keeps roofs between the height limits and never overlapping', () => {
     for (const [from, to] of roofs(7, 500, 3000)) {

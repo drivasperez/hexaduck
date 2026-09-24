@@ -1,7 +1,7 @@
 import { createLeaderboard } from '/shared/leaderboard.js';
 import {
   ACCEL, BUFFER, COYOTE, CRATE, CRATE_SLOW, G, GLIDE_FALL, GLIDE_TIME, JUMP_CUT, JUMP_V, MAX_SPEED, MIN_SPEED,
-  nextBuilding, PX_PER_M, START_SPEED, WATER_Y,
+  nextBuilding, PX_PER_M, RECOVER, START_SPEED, WATER_Y,
 } from '/runoff/level.js';
 
 (() => {
@@ -43,7 +43,7 @@ import {
   const FALL_QUIPS = [
     'Ducks can swim. This one chose drama.',
     'The water always finds a way.',
-    'Try the glide: hold jump while you fall.',
+    'Hold jump as you fall for a short glide.',
     'Runoff is a stormwater problem, and now a duck problem.',
     'Adaptation is cheaper than recovery.',
   ];
@@ -196,7 +196,8 @@ import {
 
   // ---------- state ----------
   let state = 'menu', best = loadBest(), isTouch = false;
-  let clock = 0, t = 0, speed = START_SPEED, camX = 0, startX = 0, dist = 0;
+  // `cruise` climbs steadily and sets the level's difficulty; `speed` dips below it after a crate.
+  let clock = 0, t = 0, speed = START_SPEED, cruise = START_SPEED, camX = 0, startX = 0, dist = 0;
   let buildings = [], debris = [];
   let rankIdx = 0, rankFlashT = 9, rankFlashText = '', newBest = false, quip = '';
   let shake = 0, flash = 0, deathT = 0, nextThunder = 8;
@@ -204,11 +205,11 @@ import {
   const duck = { x: 0, y: 0, vy: 0, ground: true, coyote: 0, glide: 0, gliding: false, cut: false, crashed: false };
 
   // ---------- level generation ----------
-  function addBuilding(x, w, top) {
+  function addBuilding(x, w, top, withCrates = false) {
     const b = { x, w, top, seed: (Math.random() * 1e9) | 0, crates: [], deco: Math.floor(Math.random() * 4) };
-    if (w > 520 && x > 900 && Math.random() < 0.4) {
+    if (withCrates && w > 400 && x > 900) {
       const n = 1 + Math.floor(Math.random() * 2);
-      for (let i = 0; i < n; i++) b.crates.push({ x: x + rand(160, w - 160 - CRATE), stack: Math.random() < 0.25 ? 2 : 1, hit: false });
+      for (let i = 0; i < n; i++) b.crates.push({ x: x + rand(120, w - 120 - CRATE), stack: Math.random() < 0.25 ? 2 : 1, hit: false });
     }
     buildings.push(b);
     return b;
@@ -217,8 +218,8 @@ import {
   function generate(until) {
     let prev = buildings[buildings.length - 1];
     while (prev.x + prev.w < until) {
-      const next = nextBuilding(prev, speed);
-      prev = addBuilding(next.x, next.w, next.top);
+      const next = nextBuilding(prev, cruise);
+      prev = addBuilding(next.x, next.w, next.top, next.crates);
     }
     buildings = buildings.filter(b => b.x + b.w > camX - 200);
   }
@@ -230,7 +231,7 @@ import {
 
   function resetWorld() {
     buildings = []; debris = [];
-    speed = START_SPEED;
+    speed = cruise = START_SPEED;
     addBuilding(-400, 1900, 380);
     Object.assign(duck, { x: 0, y: 380, vy: 0, ground: true, coyote: 0, glide: 0, gliding: false, cut: false, crashed: false });
     startX = duck.x; dist = 0;
@@ -292,7 +293,8 @@ import {
   function updatePlay(dt) {
     t += dt;
     const d = duck;
-    if (!d.crashed) speed = Math.min(MAX_SPEED, speed + ACCEL * dt);
+    cruise = Math.min(MAX_SPEED, cruise + ACCEL * dt);
+    if (!d.crashed) speed = Math.min(cruise, speed + RECOVER * dt);
 
     if (pressedAt >= 0 && clock - pressedAt <= BUFFER && !d.crashed && (d.ground || d.coyote > 0)) {
       d.vy = -JUMP_V; d.ground = false; d.coyote = 0; d.glide = GLIDE_TIME; d.cut = false; pressedAt = -1;
@@ -524,10 +526,10 @@ import {
       text(best > 0 ? `Best ${best} m` : 'No run yet', W / 2, H * 0.55, base * 0.04, DUCK, 700);
       if (isTouch) {
         text('Tap to start. Tap to jump, hold to jump higher.', W / 2, H * 0.72, base * 0.03, INK);
-        text('Hold while falling to glide for a moment.', W / 2, H * 0.72 + base * 0.045, base * 0.028, '#CFE6EA');
+        text('Hold while falling for a short glide.', W / 2, H * 0.72 + base * 0.045, base * 0.028, '#CFE6EA');
       } else {
         text('Press space to start. Space, ↑ or W to jump; hold to jump higher.', W / 2, H * 0.72, base * 0.03, INK);
-        text('Hold jump while falling to glide for a moment. M to mute. L for the leaderboard.', W / 2, H * 0.72 + base * 0.045, base * 0.028, '#CFE6EA');
+        text('Hold jump while falling for a short glide. M to mute. L for the leaderboard.', W / 2, H * 0.72 + base * 0.045, base * 0.028, '#CFE6EA');
       }
     }
 
