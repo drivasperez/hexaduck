@@ -39,7 +39,7 @@ test('the arcade links to every game', async ({ page }) => {
   const errors = collectErrors(page);
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Duck Arcade' })).toBeVisible();
-  for (const [name, href] of [['Hexaduck', '/hexaduck/'], ['Runoff', '/runoff/'], ['Tailwind', '/tailwind/'], ['Flock', '/flock/']]) {
+  for (const [name, href] of [['Hexaduck', '/hexaduck/'], ['Runoff', '/runoff/'], ['Tailwind', '/tailwind/'], ['Flock', '/flock/'], ['Confluence', '/confluence/']]) {
     await expect(page.getByRole('link', { name: new RegExp(name) })).toHaveAttribute('href', href);
   }
   expect(errors).toEqual([]);
@@ -108,5 +108,26 @@ test('two players in the same Flock pond see each other', async ({ browser }) =>
   for (const page of pages) await expect(page.locator('#room-count')).toHaveText('2 people swimming', { timeout: 5000 });
   await pages[0].close();
   await expect(pages[1].locator('#room-count')).toHaveText('1 person swimming', { timeout: 5000 });
+  expect(errors).toEqual([]);
+});
+
+test('a Confluence drop moves when its player flicks, and others in the basin see it', async ({ browser }) => {
+  const room = `e2e-${Math.random().toString(36).slice(2, 8)}`;
+  const pages = await Promise.all([browser.newPage(), browser.newPage()]);
+  const errors = pages.flatMap(collectErrors);
+  for (const [i, page] of pages.entries()) {
+    await page.goto(`/confluence/?room=${room}`);
+    await page.locator('#join-name').fill(`Drop ${i + 1}`);
+    await page.locator('#join button').click();
+    await expect(page.locator('#hud-len')).toHaveText(/\d+ ml/);
+  }
+  for (const page of pages) await expect(page.locator('#room-count')).toHaveText('2 people drifting', { timeout: 5000 });
+  // Flicking costs water, so holding the arrow keys for a moment shrinks the drop.
+  const before = parseInt(await pages[0].locator('#hud-len').textContent() ?? '0', 10);
+  await pages[0].locator('canvas').focus();
+  await pages[0].keyboard.down('ArrowLeft');
+  await pages[0].waitForTimeout(600);
+  await pages[0].keyboard.up('ArrowLeft');
+  await expect.poll(async () => parseInt(await pages[0].locator('#hud-len').textContent() ?? '0', 10)).toBeLessThan(before);
   expect(errors).toEqual([]);
 });

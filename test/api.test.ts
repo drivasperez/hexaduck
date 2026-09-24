@@ -189,11 +189,13 @@ describe('Tailwind scores', () => {
 });
 
 describe('server-recorded games', () => {
-  it('refuses runs for Flock, whose scores only the server records', async () => {
-    const res = await post('/api/runs', { game: 'flock', mode: 0 });
-    expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({ error: 'scores for this game are recorded by the server' });
-  });
+  for (const game of ['flock', 'confluence']) {
+    it(`refuses runs for ${game}, whose scores only the server records`, async () => {
+      const res = await post('/api/runs', { game, mode: 0 });
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: 'scores for this game are recorded by the server' });
+    });
+  }
 });
 
 describe('GET /api/scores', () => {
@@ -220,7 +222,8 @@ describe('entry module', () => {
   // Regression: workerd refuses to start if the entry module exports anything other than
   // handlers and Durable Object classes.
   it('only exports the handler and Durable Object classes', () => {
-    expect(Object.keys(entry).sort()).toEqual(['Pond', 'default']);
+    expect(Object.keys(entry).sort()).toEqual(['Basin', 'Pond', 'default']);
     expect(typeof entry.Pond).toBe('function');
+    expect(typeof entry.Basin).toBe('function');
   });
 });

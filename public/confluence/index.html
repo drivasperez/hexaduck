@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Confluence</title>
+<meta name="description" content="A multiplayer raindrop game after Osmos: absorb smaller drops, flick water to move, and stay clear of anything bigger.">
+<meta name="theme-color" content="#0B2A3A">
+<meta property="og:title" content="Confluence">
+<meta property="og:description" content="Absorb smaller drops. Flick water to move. Stay clear of anything bigger.">
+<link rel="icon" href="/confluence/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/shared/leaderboard.css">
+<link rel="stylesheet" href="/shared/room.css">
+<link rel="stylesheet" href="/confluence/style.css">
+</head>
+<body>
+<canvas id="c" tabindex="0" role="img" aria-label="Confluence: raindrops drifting in a basin, merging into one another"></canvas>
+<a class="home-link" href="/">‹ All games</a>
+
+<div id="hud" hidden>
+  <p id="hud-len" aria-live="polite"></p>
+  <div id="room">
+    <p id="room-count"></p>
+    <ol id="room-top"></ol>
+  </div>
+</div>
+
+<div id="panel" class="panel">
+  <h1>Confluence</h1>
+  <p class="lede">You're a duckling on a raindrop. Absorb smaller drops, stay clear of bigger ones, and grow as big as the rain allows.</p>
+  <form id="join">
+    <label for="join-name">Your name</label>
+    <div class="board-row">
+      <input id="join-name" maxlength="16" autocomplete="nickname" spellcheck="false" enterkeyhint="go" placeholder="Duck">
+      <button type="submit">Drift</button>
+    </div>
+  </form>
+  <p id="status" role="status"></p>
+  <p class="how" data-for="mouse">Click to flick out a droplet: you drift the other way. Hold to keep flicking, or use the arrow keys. Every flick makes you a little smaller.</p>
+  <p class="how" data-for="touch">Tap to flick out a droplet: you drift the other way. Hold to keep flicking. Every flick makes you a little smaller.</p>
+</div>
+
+<div id="dead" class="panel" hidden>
+  <h2>You were absorbed</h2>
+  <p id="dead-peak" class="big"></p>
+  <p id="dead-why"></p>
+  <p id="dead-board"></p>
+  <button id="again" type="button">Drift again</button>
+  <p class="how" data-for="mouse">or press space</p>
+</div>
+
+<script type="module" src="/confluence/game.js"></script>
+</body>
+</html>

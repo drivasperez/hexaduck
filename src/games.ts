@@ -20,6 +20,8 @@ export const GAMES: Record<string, Game> = {
   tailwind: { modes: 1, scale: 1, maxPerSecond: 85 },
   // Most ducklings in a line at once. The pond's Durable Object runs the game and records these.
   flock: { modes: 1, scale: 1, maxPerSecond: 0, serverOnly: true },
+  // Biggest a player's drop grew, in its mass units (shown as ml). Recorded by the basin.
+  confluence: { modes: 1, scale: 1, maxPerSecond: 0, serverOnly: true },
 };
 
 export function getGame(id: unknown): [string, Game] | null {

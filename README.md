@@ -6,8 +6,9 @@ Small duck-themed arcade games with a shared leaderboard, deployed as a Cloudfla
 - [Runoff](public/runoff/) is a Canabalt clone: run across rooftops above rising floodwater.
 - [Tailwind](public/tailwind/) is a Tiny Wings clone: dive down hills and fly off the tops, racing the sunset across the islands. Add `?day=5` to the URL for a five-second day, which the e2e tests use; it can only make the day shorter.
 - [Flock](public/flock/) is a multiplayer slither.io clone: gather the longest line of ducklings in a shared pond without swimming into anyone else's.
+- [Confluence](public/confluence/) is a multiplayer Osmos clone: ride a raindrop, absorb smaller drops, and flick water out behind you to move.
 
-Each game lives in its own folder under `public/` as plain HTML, CSS and JavaScript with no build step, and `public/index.html` is the landing page that links to them. `public/shared/` holds the leaderboard client and its styles, which every game uses. `src/` is a small Worker that only handles `/api/*`; every other request is served straight from the asset store. Flock's ponds are Durable Objects in `src/flock/`.
+Each game lives in its own folder under `public/` as plain HTML, CSS and JavaScript with no build step, and `public/index.html` is the landing page that links to them. `public/shared/` holds the leaderboard client and its styles, which every game uses. `src/` is a small Worker that only handles `/api/*`; every other request is served straight from the asset store. Flock's ponds and Confluence's basins are Durable Objects, in `src/flock/` and `src/confluence/`, sharing the room plumbing in `src/rooms.ts` (and `public/shared/room.js` in the browser).
 
 ## Developing
 
@@ -41,3 +42,9 @@ Players choose a name the first time they post and it's remembered in `localStor
 Each room is a Durable Object (`src/flock/pond.ts`) that runs the simulation in `src/flock/sim.ts` twenty times a second and streams snapshots to everyone connected over a WebSocket at `/api/flock?room=<name>`. The client (`public/flock/game.js`) only ever sends a steering angle and whether it's boosting, so the server decides every collision, and it records scores in D1 itself: `POST /api/runs` refuses Flock, and nobody can post a made-up flock. Bots keep at least ten ducks in the pond. Players join `pond-1` and move on to `pond-2` and beyond when a room has 30 people; any lowercase room name works, which the e2e tests use to get a pond of their own.
 
 Snapshots only carry each duck's head. Clients draw about 110 ms behind the newest snapshot so they can interpolate between two, and rebuild every trail of ducklings from where the head has been. A pond's Durable Object stays awake while anyone is connected, which is what Cloudflare bills for, and resets when the last person leaves.
+
+## How Confluence works
+
+Each basin is a Durable Object (`src/confluence/basin.ts`) running `src/confluence/sim.ts`, built on the same room plumbing as Flock. Drops are circles whose mass is their area. Where two overlap, water flows from the smaller to the bigger until they just touch, and a drop moves by flicking out a droplet of itself, conserving momentum. Rain tops the basin back up to a set amount of water and the biggest drops slowly evaporate, so there's always food and nobody stays huge forever.
+
+Because drops only drift (with drag, bouncing off the edge) unless something happens to them, the server sends only the drops whose motion changed each tick, and the browser runs the same `drift` in between. A full refresh every ten seconds is a backstop; a test checks the browser's prediction matches the server. Your own flicks are applied in the browser straight away and confirmed by the next update.

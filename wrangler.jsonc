@@ -19,8 +19,17 @@
   ],
   // Cloudflare creates the DNS record and certificate for this on deploy; drpz.xyz must be a zone on this account.
   "routes": [{ "pattern": "hexaduck.drpz.xyz", "custom_domain": true }],
-  // Each Flock room is a Durable Object that runs the game (src/flock/pond.ts).
-  "durable_objects": { "bindings": [{ "name": "POND", "class_name": "Pond" }] },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Pond"] }],
+  // Each multiplayer room is a Durable Object that runs the game: Flock's ponds
+  // (src/flock/pond.ts) and Confluence's basins (src/confluence/basin.ts).
+  "durable_objects": {
+    "bindings": [
+      { "name": "POND", "class_name": "Pond" },
+      { "name": "BASIN", "class_name": "Basin" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["Pond"] },
+    { "tag": "v2", "new_sqlite_classes": ["Basin"] }
+  ],
   "observability": { "enabled": true }
 }

@@ -65,10 +65,16 @@
       <p>A pond full of other players. Gather the longest line of ducklings, and don't swim into anyone else's.</p>
       <p class="top"></p>
     </a>
+    <a class="game" href="/confluence/" data-game="confluence" data-format="ml">
+      <img src="/confluence/favicon.svg" alt="">
+      <h2>Confluence</h2>
+      <p>Ride a raindrop in a shared basin. Absorb smaller drops, flick water to move, and stay clear of anything bigger.</p>
+      <p class="top"></p>
+    </a>
   </div>
 </main>
 <script type="module">
-  const FORMAT = { seconds: s => `${s.toFixed(2)} s`, metres: m => `${m} m`, ducklings: n => `${n} ducklings` };
+  const FORMAT = { seconds: s => `${s.toFixed(2)} s`, metres: m => `${m} m`, ducklings: n => `${n} ducklings`, ml: n => `${n} ml` };
   for (const card of document.querySelectorAll('.game')) {
     const top = card.querySelector('.top');
     fetch(`/api/scores?game=${card.dataset.game}&mode=0`)
