@@ -1,4 +1,4 @@
-import * as Board from './leaderboard.js';
+import { createLeaderboard } from '/shared/leaderboard.js';
 
 (() => {
   const cv = document.getElementById('c');
@@ -268,18 +268,21 @@ import * as Board from './leaderboard.js';
     Music.muffle();
   }
 
-  const boardBtn = document.getElementById('board-btn');
+  const Board = createLeaderboard({
+    game: 'hexaduck', modes: MODES.map(m => m.name), format: s => `${s.toFixed(2)} s`, onClose: () => cv.focus(),
+  });
+  const homeLink = document.querySelector('.home-link');
   function openBoard() {
     if (state === 'play') return;
     keys.l = keys.r = false; touches.clear();
-    Board.open(mode, () => cv.focus());
+    Board.open(mode);
   }
-  boardBtn.addEventListener('click', openBoard);
+  Board.button.addEventListener('click', openBoard);
 
   function boardLine(s) {
     switch (s?.kind) {
       case 'posting': return ['Posting to the leaderboard…', false];
-      case 'posted': return [s.improved ? `#${s.rank} on the ${s.scope} leaderboard` : `Your best stands at ${s.best.toFixed(2)} s, #${s.rank} on ${s.scope}`, s.improved];
+      case 'posted': return [s.improved ? `#${s.rank} on the ${s.modeName} leaderboard` : `Your best stands at ${s.best.toFixed(2)} s, #${s.rank} on ${s.modeName}`, s.improved];
       case 'needName': return [isTouch ? 'Tap Leaderboard to post this run' : 'Press L to post this run to the leaderboard', false];
       case 'rejected': return ['The leaderboard did not accept this run', false];
       case 'offline': return ['The leaderboard is unavailable right now', false];
@@ -525,7 +528,8 @@ import * as Board from './leaderboard.js';
     if (dt > 1 / 30) dt = 1 / 30;
     update(dt);
     draw();
-    boardBtn.hidden = state === 'play';
+    Board.button.hidden = state === 'play';
+    homeLink.hidden = state !== 'menu';
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);

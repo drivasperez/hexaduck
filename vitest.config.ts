@@ -7,8 +7,9 @@ export default defineConfig({
       wrangler: { configPath: './wrangler.jsonc' },
       miniflare: {
         bindings: { TEST_MIGRATIONS: await readD1Migrations('./migrations') },
+        d1Databases: ['MIGRATION_DB'],
       },
     })),
   ],
-  test: { setupFiles: ['./test/apply-migrations.ts'] },
+  test: { include: ['test/**/*.test.ts'], setupFiles: ['./test/apply-migrations.ts'] },
 });

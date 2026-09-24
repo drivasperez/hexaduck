@@ -1,32 +1,35 @@
-# Hexaduck
+# Duck Arcade
 
-A Watershed-themed Super Hexagon clone, deployed as a Cloudflare Worker with static assets and a D1 (SQLite) leaderboard.
+Small duck-themed arcade games with a shared leaderboard, deployed as a Cloudflare Worker with static assets and a D1 (SQLite) database.
 
-The game itself lives in `public/` and is plain HTML, CSS and JavaScript with no build step. `src/` holds a small Worker that only handles `/api/*`; every other request is served straight from the asset store.
+- [Hexaduck](public/hexaduck/) is a Super Hexagon clone: steer around the hexagon and dodge the walls.
+- [Runoff](public/runoff/) is a Canabalt clone: run across rooftops above rising floodwater.
+
+Each game lives in its own folder under `public/` as plain HTML, CSS and JavaScript with no build step, and `public/index.html` is the landing page that links to them. `public/shared/` holds the leaderboard client and its styles, which every game uses. `src/` is a small Worker that only handles `/api/*`; every other request is served straight from the asset store.
 
 ## Developing
 
 ```sh
 npm install
-npm run db:migrate:local   # create the local D1 database
+npm run db:migrate:local   # create or update the local D1 database
 npm run dev                # http://localhost:8787
-npm test                   # API tests, run inside workerd against a real D1
+npm test                   # API, migration and level-generation tests, run inside workerd
+npm run test:e2e           # browser tests against wrangler dev (desktop and mobile)
 npm run typecheck
 ```
 
+The e2e tests need a browser: either run `npx playwright install chromium` once, or set `PW_CHANNEL=chrome` to use an installed Chrome.
+
 ## Deploying
 
-The first time, create the database and paste the id it prints into `database_id` in `wrangler.jsonc`:
+`npm run deploy` applies any pending migrations to the remote database and deploys the Worker to its custom domain (see `routes` in `wrangler.jsonc`).
 
-```sh
-npx wrangler login
-npx wrangler d1 create hexaduck
-```
+## Adding a game
 
-After that, `npm run deploy` applies any pending migrations to the remote database and deploys the Worker.
+Add an entry to `GAMES` in `src/games.ts` with its number of modes, how to store its score as an integer, and the fastest its score can grow per second of real time. Then create `public/<game>/`, call `createLeaderboard` from `/shared/leaderboard.js` with the same id, and add a card to `public/index.html`. No migration is needed.
 
 ## How the leaderboard works
 
-When a game starts the client asks for a run id (`POST /api/runs`), and the server records when it handed it out. When the duck dies the client redeems that id with a name and a time (`POST /api/scores`). Each id can be redeemed once, within an hour, and the claimed time can't exceed the wall-clock time since the run began. That rules out simply posting a made-up number, but it is not real anti-cheat: someone determined could request a run id, wait, and claim the elapsed time. The board keeps each name's best time per scope, and names are compared case-insensitively.
+When a game starts the client asks for a run id (`POST /api/runs` with the game and mode), and the server records when it handed it out. When the run ends the client redeems that id with a name and a score (`POST /api/scores`). Each id can be redeemed once, within an hour, and the score can't be higher than the game's `maxPerSecond` times the wall-clock seconds since the run began. That rules out simply posting a made-up number, but it is not real anti-cheat: someone determined could request a run id, wait, and claim the most the elapsed time allows. The board keeps each name's best score per game and mode, and names are compared case-insensitively.
 
-Players choose a name the first time they post and it's remembered in `localStorage`, so later runs are posted automatically.
+Players choose a name the first time they post and it's remembered in `localStorage` for every game, so later runs are posted automatically.
