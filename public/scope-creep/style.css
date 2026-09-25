@@ -99,6 +99,7 @@ b.kw { color: var(--duck); font-weight: 700; text-decoration: underline dotted r
 .how h2 { text-align: left; }
 .how h3 { font-family: var(--serif); color: var(--duck); margin: 20px 0 6px; font-size: 21px; }
 .how p, .how li { color: #D0DFE0; }
+.how > p { text-align: left; }
 
 /* ---------- cards ---------- */
 .cards { display: flex; flex-wrap: wrap; gap: 16px; justify-content: center; }

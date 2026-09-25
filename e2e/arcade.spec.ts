@@ -275,3 +275,15 @@ test('Scope Creep cards can be dragged: onto an enemy to target, or up out of th
   }
   expect(errors).toEqual([]);
 });
+
+// Regression: from the title screen, with no run loaded, How to play just redrew the title.
+test('Scope Creep shows How to play from the title screen, and Back returns there', async ({ page }) => {
+  await page.goto('/scope-creep/');
+  await page.evaluate(() => localStorage.removeItem('scope-creep-run'));
+  await page.reload();
+  await page.getByRole('button', { name: 'How to play' }).click();
+  await expect(page.getByRole('heading', { name: 'How to play' })).toBeVisible();
+  await expect(page.getByText('Carbon and Heat')).toBeVisible();
+  await page.getByRole('button', { name: 'Back' }).click();
+  await expect(page.getByRole('button', { name: 'New run' })).toBeVisible();
+});

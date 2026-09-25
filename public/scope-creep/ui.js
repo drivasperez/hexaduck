@@ -251,8 +251,9 @@ function render() {
   app.replaceChildren();
   Board.button.hidden = !(ui.view === 'title' || s?.screen === 'gameover' || s?.screen === 'victory');
   Sound.mood(!s || ui.view === 'title' ? 'map' : s.screen === 'combat' ? s.combat.kind === 'fight' ? 'fight' : s.combat.kind : ['gameover', 'victory'].includes(s.screen) ? 'quiet' : 'map');
+  // How to play is reachable from the title screen too, where no run is loaded.
+  if (ui.view === 'how') { app.append(h('div', { class: 'app-bg', 'aria-hidden': 'true' }, sceneEl(s?.act || 1, false, s ? E.heat(s) : 0)), howScreen()); return; }
   if (ui.view === 'title' || !s) { app.append(titleScreen()); return; }
-  if (ui.view === 'how') { app.append(howScreen()); return; }
   if (s.screen !== 'combat') app.append(h('div', { class: 'app-bg', 'aria-hidden': 'true' }, sceneEl(s.act, false, E.heat(s))));
   app.append(...topBar());
   const screen = {
@@ -297,7 +298,7 @@ function howScreen() {
     h('h2', {}, 'How to play'),
     h('p', {}, 'You are a duck in charge of sustainability. Climb three acts (Scope 1, Scope 2 and Scope 3), choosing your path on each act\'s map, and defeat the boss at the top of each.'),
     h('h3', {}, 'Combat'),
-    h('p', {}, 'Each turn you have 3 energy and draw 5 cards. Play cards by clicking them (and then an enemy, if they need a target). Attacks lower an enemy\'s health; Assurance blocks damage until your next turn. Above each enemy is its intent: what it will do when you end your turn.'),
+    h('p', {}, 'Each turn you have 3 energy and draw 5 cards. Drag a card onto an enemy to play it on them, or drag it up out of your hand if it doesn\'t need a target. (Clicking works too: click a card, then its target.) While you aim, the enemy shows exactly how much damage it would take. Attacks lower an enemy\'s health; Assurance blocks damage until your next turn. Above each enemy is its intent: what it will do when you end your turn.'),
     h('h3', {}, 'Carbon and Heat'),
     h('p', {}, `Your carbon lasts the whole run. Enemies that Emit add to it every turn they're left standing, and Fossil cards add to it when you play them. Every ${E.HEAT_STEP} carbon is a point of Heat, and every enemy you meet afterwards gains 1 Drive (1 more damage per hit) for each point. Offsets lower carbon cheaply, but each boss audits them and half fail, coming back doubled. Removals are permanent. At rest ponds you can heal, upgrade a card, or restore a wetland to remove carbon.`),
     h('h3', {}, 'Building a deck'),
