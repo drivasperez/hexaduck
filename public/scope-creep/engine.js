@@ -736,6 +736,7 @@ function nextAct(s) {
 // Applies one action to the state (changing it) and returns it. Throws IllegalAction if the
 // action isn't allowed right now, leaving the state as it was. Pass an array as `events` to
 // have what happened noted in it, in order (see `note`).
+/** @param {object[] | null} [events] */
 export function apply(s, a, events = null) {
   sink = events;
   try { return applyAction(s, a); } finally { sink = null; }
