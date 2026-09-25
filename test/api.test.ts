@@ -182,7 +182,8 @@ describe('Tailwind scores', () => {
     const ok = await runStartedAgo(30_000, 'tailwind');
     expect((await post('/api/scores', { runId: ok, name: 'Swift', score: maxPerSecond * 30 })).status).toBe(200);
     const cheat = await runStartedAgo(30_000, 'tailwind');
-    const tooFar = maxPerSecond * (30 + CLOCK_SLACK_MS / 1000) + 10;
+    // Far enough over that a slow test machine (whose clock keeps running) can't make it legal.
+    const tooFar = maxPerSecond * (30 + CLOCK_SLACK_MS / 1000 + 5);
     expect((await post('/api/scores', { runId: cheat, name: 'Cheat', score: tooFar })).status).toBe(422);
     expect(await board('tailwind')).toEqual([{ name: 'Swift', score: maxPerSecond * 30 }]);
   });

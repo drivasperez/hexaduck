@@ -9,7 +9,7 @@ export interface Game {
   maxPerSecond: number;
   // Scores are recorded by the server itself (see src/flock/pond.ts), so clients can't post them.
   serverOnly?: boolean;
-  // Scores are checked by replaying the run (see src/scopecreep.ts), not posted directly.
+  // Scores are checked by replaying the run (see src/replayed.ts), not posted directly.
   replayed?: boolean;
   // How long a run id stays redeemable, if not the default hour.
   runTtlMs?: number;
@@ -28,6 +28,8 @@ export const GAMES: Record<string, Game> = {
   confluence: { modes: 1, scale: 1, maxPerSecond: 0, serverOnly: true },
   // A run's score, worked out by replaying it. Runs can be long and resumed, so ids last a fortnight.
   scopecreep: { modes: 1, scale: 1, maxPerSecond: 0, replayed: true, runTtlMs: 14 * 24 * 60 * 60 * 1000 },
+  // Audit, Please: savings plus correct calls and the ending, worked out by replaying the run.
+  audit: { modes: 1, scale: 1, maxPerSecond: 0, replayed: true, runTtlMs: 14 * 24 * 60 * 60 * 1000 },
 };
 
 export function getGame(id: unknown): [string, Game] | null {

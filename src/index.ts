@@ -2,7 +2,7 @@
 // Workers only allow handlers and Durable Object classes as named exports from this module,
 // so the rest of the logic lives in ./leaderboard, ./flock and ./confluence.
 import { error, listScores, startRun, submitScore } from './leaderboard';
-import { finishScopeCreep } from './scopecreep';
+import { finishReplayed } from './replayed';
 
 export { Basin } from './confluence/basin';
 export { Pond } from './flock/pond';
@@ -30,7 +30,9 @@ export default {
         case 'GET /api/scores':
           return await listScores(url, env);
         case 'POST /api/scope-creep/finish':
-          return await finishScopeCreep(req, env);
+          return await finishReplayed(req, env, 'scopecreep');
+        case 'POST /api/audit/finish':
+          return await finishReplayed(req, env, 'audit');
         case 'GET /api/flock':
           return joinRoom(req, url, env.POND);
         case 'GET /api/confluence':

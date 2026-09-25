@@ -85,6 +85,12 @@ const FX = {
   gameover: t => [392, 330, 262, 196].forEach((f, i) => voice(fxBus, t + i * 0.22, f, 0.6, { type: 'triangle', v: 0.07 })),
   victory: t => [523, 659, 784, 1047, 784, 1047, 1319].forEach((f, i) => voice(fxBus, t + i * 0.12, f, 0.5, { type: 'triangle', v: 0.06 })),
   duck: t => { voice(fxBus, t, 700, 0.09, { type: 'sawtooth', v: 0.03, cutoff: 1400, slideTo: 520 }); },
+  // Office sounds, for Audit, Please.
+  stamp: t => { voice(fxBus, t, 90, 0.18, { type: 'sine', v: 0.35, slideTo: 40 }); hiss(fxBus, t, 0.06, { freq: 900, type: 'lowpass', v: 0.3 }); },
+  buzz: t => { voice(fxBus, t, 110, 0.35, { type: 'square', v: 0.05, cutoff: 700 }); voice(fxBus, t, 116, 0.35, { type: 'square', v: 0.05, cutoff: 700 }); },
+  coin: t => { voice(fxBus, t, 1568, 0.12, { type: 'square', v: 0.03, cutoff: 5000 }); voice(fxBus, t + 0.07, 2093, 0.25, { type: 'square', v: 0.03, cutoff: 5000 }); },
+  paper: t => hiss(fxBus, t, 0.14, { freq: 3500, type: 'bandpass', v: 0.12, q: 0.5 }),
+  found: t => { voice(fxBus, t, 880, 0.1, { type: 'triangle', v: 0.05 }); voice(fxBus, t + 0.08, 660, 0.2, { type: 'triangle', v: 0.05 }); },
 };
 
 export const Sound = {

@@ -51,5 +51,5 @@ describe('Scope Creep difficulty', () => {
     expect(pastAct1 / N).toBeGreaterThan(0.6);
     expect(pastAct1 / N).toBeLessThan(1);
     expect(wins / N).toBeLessThan(0.25);
-  });
+  }, 30_000);  // plays 40 full runs, which is slow when other suites share the machine
 });

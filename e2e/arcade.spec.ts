@@ -1,6 +1,8 @@
 import { expect, type Page, test } from '@playwright/test';
 import { apply as applyEngine, newRun, seedFrom, VERSION } from '../public/scope-creep/engine.js';
 import { plannerPlayer, playRun } from '../test/scope-creep/players.js';
+import * as Audit from '../public/audit/engine.js';
+import { clerk, playRun as playAudit } from '../test/audit/players.js';
 
 // Each test posts under its own name, since tests share one database.
 const uniqueName = () => `e2e ${Math.random().toString(36).slice(2, 8)}`;
@@ -41,7 +43,7 @@ test('the arcade links to every game', async ({ page }) => {
   const errors = collectErrors(page);
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Duck Arcade' })).toBeVisible();
-  for (const [name, href] of [['Hexaduck', '/hexaduck/'], ['Runoff', '/runoff/'], ['Tailwind', '/tailwind/'], ['Flock', '/flock/'], ['Confluence', '/confluence/'], ['Scope Creep', '/scope-creep/']]) {
+  for (const [name, href] of [['Hexaduck', '/hexaduck/'], ['Runoff', '/runoff/'], ['Tailwind', '/tailwind/'], ['Flock', '/flock/'], ['Confluence', '/confluence/'], ['Scope Creep', '/scope-creep/'], ['Audit, Please', '/audit/']]) {
     await expect(page.getByRole('link', { name: new RegExp(name) })).toHaveAttribute('href', href);
   }
   expect(errors).toEqual([]);
@@ -392,4 +394,105 @@ test('Scope Creep flies drawn cards out of the draw pile into the hand', async (
   await expect(page.locator('.hand .card.incoming')).toHaveCount(0);
   await expect(pile).not.toHaveText(String(moment.drawBefore));
   expect(errors).toEqual([]);
+});
+
+// ---------- Audit, Please ----------
+const auditMoves = (page: Page) => page.evaluate(() => JSON.parse(localStorage.getItem('audit-run') ?? '{"actions":[]}').actions.length);
+
+test('an Audit, Please shift: call an applicant, inspect a discrepancy, stamp, and resume after a reload', async ({ page }) => {
+  const errors = collectErrors(page);
+  await page.goto('/audit/');
+  await page.getByRole('button', { name: 'New run' }).click();
+  await page.getByRole('button', { name: 'Report for work' }).click();
+  await expect(page.getByText('New in the rulebook today')).toBeVisible();
+  await page.getByRole('button', { name: 'Open the window' }).click();
+  await page.getByRole('button', { name: /Call next applicant/ }).click();
+  await expect(page.locator('.doc[data-doc="form"]')).toBeVisible();
+  await expect(page.locator('.bar .clock')).toHaveText(/09:18/);
+
+  // Compare the form's company with the rule on signatures: no discrepancy, and 5 minutes gone.
+  await page.getByRole('button', { name: /Inspect/ }).click();
+  await page.getByRole('button', { name: 'Inspect Claim form: Company' }).click();
+  await page.getByRole('button', { name: 'Inspect Rule: Signatures' }).click();
+  await expect(page.getByText(/No discrepancy there|Discrepancy:/)).toBeVisible();
+  await expect(page.locator('.bar .clock')).toHaveText(/09:23/);
+
+  // Then a pair the checker knows to be wrong, if this claim has one.
+  const save = await page.evaluate(() => JSON.parse(localStorage.getItem('audit-run')!));
+  const s = Audit.replay(save.seed, save.actions);
+  const flaw = s.case.results[0];
+  if (flaw) {
+    const [a, b] = flaw.pairs[0];
+    await page.locator(`[data-ref="${a}"]`).click();
+    await page.locator(`[data-ref="${b}"]`).click();
+    await expect(page.getByText(/^Discrepancy:/)).toBeVisible();
+    await expect(page.getByText('Noted: 1 discrepancy.')).toBeVisible();
+  }
+
+  // Stamp the right way, with the keyboard.
+  const before = await auditMoves(page);
+  await page.keyboard.press(flaw ? 'r' : 'a');
+  await expect.poll(() => auditMoves(page)).toBe(before + 1);
+  await expect(page.getByText(/^(Approved|Rejected)\.$/)).toBeVisible();
+  await expect(page.locator('.doc')).toHaveCount(0);
+
+  await page.reload();
+  await page.getByRole('button', { name: 'Continue (day 1)' }).click();
+  await expect(page.getByRole('button', { name: /Call next applicant/ })).toBeVisible();
+  await expect(page.locator('.bar .clock')).toHaveText(/09:(27|32)/);
+  expect(errors).toEqual([]);
+});
+
+test('an Audit, Please evening: pay the rent, feed the ducklings, and wake up to the next memo', async ({ page }) => {
+  const errors = collectErrors(page);
+  // A save standing at the end of day 1, played by the test clerk.
+  const seed = 11;
+  const s = Audit.newRun(seed), actions: object[] = [];
+  const p = clerk(seed);
+  while (s.screen !== 'night') { const a = p(s); Audit.apply(s, a); actions.push(a); }
+  await page.goto('/audit/');
+  await page.evaluate(save => localStorage.setItem('audit-run', JSON.stringify(save)), { v: Audit.VERSION, runId: null, seed, actions });
+  await page.reload();
+  await page.getByRole('button', { name: 'Continue (day 1)' }).click();
+  await expect(page.getByRole('heading', { name: 'End of day 1' })).toBeVisible();
+  await expect(page.locator('.duckling')).toHaveCount(3);
+  // Skipping Pip's dinner saves £5.
+  const left = async () => Number((await page.locator('.nest .savings b').textContent())!.replace(/[^\d-]/g, ''));
+  const full = await left();
+  await page.getByLabel(/Food for Pip/).uncheck();
+  expect(await left()).toBe(full + Audit.NEST.food);
+  await page.getByRole('button', { name: 'Go to sleep' }).click();
+  // Day 2 has a night event afterwards, not day 1: straight to the next memo.
+  await expect(page.getByText('MEMORANDUM')).toBeVisible();
+  await expect(page.locator('.bar .when')).toContainText('Day 2');
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('audit-run')!));
+  expect(Audit.replay(seed, saved.actions).nest[0].hunger).toBe(1);
+  expect(errors).toEqual([]);
+});
+
+test('a finished Audit, Please run can be posted, and the server checks it', async ({ page, request }) => {
+  const errors = collectErrors(page);
+  const { runId } = await (await request.post('/api/runs', { data: { game: 'audit', mode: 0 } })).json();
+  const { s, actions } = playAudit(Audit.seedFrom(runId), clerk(2));
+  expect(s.screen).toBe('end');
+  await page.goto('/audit/');
+  await page.evaluate(save => localStorage.setItem('audit-run', JSON.stringify(save)), { v: Audit.VERSION, runId, seed: Audit.seedFrom(runId), actions });
+  await page.reload();
+  await page.getByRole('button', { name: 'Post your last run' }).click();
+  await expect(page.getByRole('heading', { name: 'The Exposé' })).toBeVisible();
+  await expect(page.locator('.score .total')).toContainText(String(Audit.score(s).total));
+  await page.getByRole('textbox', { name: 'Your name' }).fill(uniqueName());
+  await page.getByRole('button', { name: 'Post score' }).click();
+  await expect(page.getByText(/Posted: #\d+ on the leaderboard|Your best stands at/)).toBeVisible();
+  const again = await request.post('/api/audit/finish', { data: { runId, name: 'Again', actions } });
+  expect(again.status()).toBe(409);
+  expect(errors).toEqual([]);
+});
+
+test('Audit, Please shows How to play from the title screen, and Back returns there', async ({ page }) => {
+  await page.goto('/audit/');
+  await page.getByRole('button', { name: 'How to play' }).click();
+  await expect(page.getByRole('heading', { name: 'How to play' })).toBeVisible();
+  await page.getByRole('button', { name: 'Back' }).click();
+  await expect(page.getByRole('button', { name: 'New run' })).toBeVisible();
 });
