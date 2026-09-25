@@ -1,4 +1,6 @@
 import { expect, type Page, test } from '@playwright/test';
+import { seedFrom, VERSION } from '../public/scope-creep/engine.js';
+import { plannerPlayer, playRun } from '../test/scope-creep/players.js';
 
 // Each test posts under its own name, since tests share one database.
 const uniqueName = () => `e2e ${Math.random().toString(36).slice(2, 8)}`;
@@ -39,7 +41,7 @@ test('the arcade links to every game', async ({ page }) => {
   const errors = collectErrors(page);
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Duck Arcade' })).toBeVisible();
-  for (const [name, href] of [['Hexaduck', '/hexaduck/'], ['Runoff', '/runoff/'], ['Tailwind', '/tailwind/'], ['Flock', '/flock/'], ['Confluence', '/confluence/']]) {
+  for (const [name, href] of [['Hexaduck', '/hexaduck/'], ['Runoff', '/runoff/'], ['Tailwind', '/tailwind/'], ['Flock', '/flock/'], ['Confluence', '/confluence/'], ['Scope Creep', '/scope-creep/']]) {
     await expect(page.getByRole('link', { name: new RegExp(name) })).toHaveAttribute('href', href);
   }
   expect(errors).toEqual([]);
@@ -129,5 +131,58 @@ test('a Confluence drop moves when its player flicks, and others in the basin se
   await pages[0].waitForTimeout(600);
   await pages[0].keyboard.up('ArrowLeft');
   await expect.poll(async () => parseInt(await pages[0].locator('#hud-len').textContent() ?? '0', 10)).toBeLessThan(before);
+  expect(errors).toEqual([]);
+});
+
+test('a Scope Creep run can be started, fought through and resumed after a reload', async ({ page }) => {
+  const errors = collectErrors(page);
+  await page.goto('/scope-creep/');
+  await page.getByRole('button', { name: 'New run' }).click();
+  // Take the first mandate, then whatever it asks for.
+  await page.locator('.option').first().click();
+  if (await page.locator('.card').count()) {
+    await page.locator('.card').first().click();
+    const confirm = page.getByRole('button', { name: 'Confirm' });
+    if (await confirm.count()) await confirm.click();
+  }
+  const cont = page.getByRole('button', { name: /^Continue$/ });
+  if (await cont.count()) await cont.click();
+  await page.locator('.node.open').first().click();
+  await expect(page.locator('.hand .card').first()).toBeVisible();
+
+  // Play the first playable card, on the first enemy if it needs one.
+  // Cards differ (some cost nothing, powers leave play), so check the move was recorded.
+  const moves = () => page.evaluate(() => JSON.parse(localStorage.getItem('scope-creep-run') ?? '{"actions":[]}').actions.length);
+  const before = await moves();
+  await page.locator('.hand .card:not(.disabled)').first().click();
+  if (await page.locator('.foe.targetable').count()) await page.locator('.foe.targetable').first().click();
+  await expect.poll(moves).toBe(before + 1);
+  await page.getByRole('button', { name: 'End turn' }).click();
+
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('scope-creep-run') ?? 'null'));
+  expect(saved.runId).toBeTruthy();
+  expect(saved.actions.length).toBeGreaterThan(2);
+  await page.reload();
+  await page.getByRole('button', { name: /Continue \(Act 1/ }).click();
+  await expect(page.locator('.hand .card').first()).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test('a finished Scope Creep run can be posted after a reload, and the server checks it', async ({ page, request }) => {
+  const errors = collectErrors(page);
+  // Get a real run id, then play the whole run on its seed ahead of time.
+  const { runId } = await (await request.post('/api/runs', { data: { game: 'scopecreep', mode: 0 } })).json();
+  const { s, actions } = playRun(seedFrom(runId), plannerPlayer(3));
+  expect(['gameover', 'victory']).toContain(s.screen);
+  await page.goto('/scope-creep/');
+  await page.evaluate(save => localStorage.setItem('scope-creep-run', JSON.stringify(save)), { v: VERSION, runId, seed: seedFrom(runId), actions });
+  await page.reload();
+  await page.getByRole('button', { name: 'Post your last run' }).click();
+  await page.getByRole('textbox', { name: 'Your name' }).fill(uniqueName());
+  await page.getByRole('button', { name: 'Post score' }).click();
+  await expect(page.getByText(/Posted: #\d+ on the leaderboard|Your best stands at/)).toBeVisible();
+  // Posting again is refused: each run counts once.
+  const again = await request.post('/api/scope-creep/finish', { data: { runId, name: 'Again', actions } });
+  expect(again.status()).toBe(409);
   expect(errors).toEqual([]);
 });

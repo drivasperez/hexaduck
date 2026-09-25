@@ -6,7 +6,7 @@
 //
 // Scores in requests and responses are in the game's own unit (seconds, metres, ...).
 
-import { type Game, getGame } from './games';
+import { type Game, GAMES, getGame } from './games';
 
 export const LEADERBOARD_SIZE = 10;
 export const NAME_MAX = 16;
@@ -56,8 +56,12 @@ export async function startRun(req: Request, env: Env): Promise<Response> {
   if (mode === null) return error(400, 'invalid mode');
   const now = Date.now();
   const runId = crypto.randomUUID();
+  // Prune expired runs: most games' after an hour, long-lived ones after their own time.
+  const longLived = Object.entries(GAMES).filter(([, g]) => g.runTtlMs);
   await env.DB.batch([
-    env.DB.prepare('DELETE FROM runs WHERE started_at < ?').bind(now - RUN_TTL_MS),
+    env.DB.prepare(`DELETE FROM runs WHERE started_at < ? AND game NOT IN (${longLived.map(() => '?').join(', ') || "''"})`)
+      .bind(now - RUN_TTL_MS, ...longLived.map(([id]) => id)),
+    ...longLived.map(([id, g]) => env.DB.prepare('DELETE FROM runs WHERE game = ? AND started_at < ?').bind(id, now - g.runTtlMs!)),
     env.DB.prepare('INSERT INTO runs (id, game, mode, started_at) VALUES (?, ?, ?, ?)').bind(runId, gameId, mode, now),
   ]);
   return json({ runId });
@@ -73,6 +77,9 @@ export async function submitScore(req: Request, env: Env): Promise<Response> {
   if (typeof body.runId !== 'string') return error(400, 'invalid runId');
 
   const now = Date.now();
+  // Replayed games' runs must go through their own endpoint; turn them away before claiming.
+  const kind = await env.DB.prepare('SELECT game FROM runs WHERE id = ?').bind(body.runId).first<{ game: string }>();
+  if (kind && getGame(kind.game)?.[1].replayed) return error(400, 'scores for this game are checked by replaying the run');
   // Claim the run atomically so a run id can only ever be redeemed once.
   const run = await env.DB.prepare(
     'UPDATE runs SET used = 1 WHERE id = ? AND used = 0 AND started_at >= ? RETURNING game, mode, started_at',

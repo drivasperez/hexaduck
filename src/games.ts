@@ -9,6 +9,10 @@ export interface Game {
   maxPerSecond: number;
   // Scores are recorded by the server itself (see src/flock/pond.ts), so clients can't post them.
   serverOnly?: boolean;
+  // Scores are checked by replaying the run (see src/scopecreep.ts), not posted directly.
+  replayed?: boolean;
+  // How long a run id stays redeemable, if not the default hour.
+  runTtlMs?: number;
 }
 
 export const GAMES: Record<string, Game> = {
@@ -22,6 +26,8 @@ export const GAMES: Record<string, Game> = {
   flock: { modes: 1, scale: 1, maxPerSecond: 0, serverOnly: true },
   // Biggest a player's drop grew, in its mass units (shown as ml). Recorded by the basin.
   confluence: { modes: 1, scale: 1, maxPerSecond: 0, serverOnly: true },
+  // A run's score, worked out by replaying it. Runs can be long and resumed, so ids last a fortnight.
+  scopecreep: { modes: 1, scale: 1, maxPerSecond: 0, replayed: true, runTtlMs: 14 * 24 * 60 * 60 * 1000 },
 };
 
 export function getGame(id: unknown): [string, Game] | null {

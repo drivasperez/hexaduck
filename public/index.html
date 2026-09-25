@@ -71,10 +71,16 @@
       <p>Ride a raindrop in a shared basin. Absorb smaller drops, flick water to move, and stay clear of anything bigger.</p>
       <p class="top"></p>
     </a>
+    <a class="game" href="/scope-creep/" data-game="scopecreep" data-format="points">
+      <img src="/scope-creep/favicon.svg" alt="">
+      <h2>Scope Creep</h2>
+      <p>A deckbuilder about ducks and emissions accounting. Climb three scopes, keep your credibility, and watch your carbon: power now makes every later fight harder.</p>
+      <p class="top"></p>
+    </a>
   </div>
 </main>
 <script type="module">
-  const FORMAT = { seconds: s => `${s.toFixed(2)} s`, metres: m => `${m} m`, ducklings: n => `${n} ducklings`, ml: n => `${n} ml` };
+  const FORMAT = { seconds: s => `${s.toFixed(2)} s`, metres: m => `${m} m`, ducklings: n => `${n} ducklings`, ml: n => `${n} ml`, points: n => `${n} points` };
   for (const card of document.querySelectorAll('.game')) {
     const top = card.querySelector('.top');
     fetch(`/api/scores?game=${card.dataset.game}&mode=0`)
