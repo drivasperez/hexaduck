@@ -1,5 +1,5 @@
 import { expect, type Page, test } from '@playwright/test';
-import { seedFrom, VERSION } from '../public/scope-creep/engine.js';
+import { apply as applyEngine, newRun, seedFrom, VERSION } from '../public/scope-creep/engine.js';
 import { plannerPlayer, playRun } from '../test/scope-creep/players.js';
 
 // Each test posts under its own name, since tests share one database.
@@ -286,4 +286,62 @@ test('Scope Creep shows How to play from the title screen, and Back returns ther
   await expect(page.getByText('Carbon and Heat')).toBeVisible();
   await page.getByRole('button', { name: 'Back' }).click();
   await expect(page.getByRole('button', { name: 'New run' })).toBeVisible();
+});
+
+// Regression for player feedback: fully blocked enemy hits looked like nothing happened, and
+// winning jumped straight to the reward screen. The moments are found by simulating a run first,
+// so the test is exact rather than hoping a random fight produces them.
+function findMoments() {
+  let blocked: any = null, winning: any = null;
+  for (let seed = 1; seed < 60 && !(blocked && winning); seed++) {
+    const player = plannerPlayer(seed);
+    const st: any = newRun(seed);
+    const actions: any[] = [];
+    while (!['gameover', 'victory'].includes(st.screen) && !(blocked && winning)) {
+      const a = player(st);
+      const events: any[] = [];
+      const before = actions.length;
+      applyEngine(st, a, events);
+      actions.push(a);
+      const save = { v: VERSION, runId: null, seed, actions: actions.slice(0, before) };
+      if (!blocked && a.type === 'end' && events.some(e => e.k === 'hurt' && e.lost === 0 && e.blocked > 0)) blocked = save;
+      if (!winning && a.type === 'play' && events.some(e => e.k === 'win')) winning = { save, action: a };
+    }
+  }
+  return { blocked, winning };
+}
+
+test('Scope Creep shows blocked hits and plays out the end of a fight', async ({ page }) => {
+  test.skip(test.info().project.name === 'mobile', 'the same code runs on both; one run is enough');
+  const errors = collectErrors(page);
+  const { blocked, winning } = findMoments();
+  expect(blocked && winning).toBeTruthy();
+  const load = async (save: unknown) => {
+    await page.goto('/scope-creep/');
+    await page.evaluate(sv => localStorage.setItem('scope-creep-run', JSON.stringify(sv)), save);
+    await page.reload();
+    await page.getByRole('button', { name: /Continue \(/ }).click();
+    await expect(page.locator('.hand .card').first()).toBeVisible();
+  };
+
+  // An enemy hit that's fully blocked is named and shown as blocked.
+  await load(blocked);
+  await page.getByRole('button', { name: 'End turn' }).click();
+  await expect(page.locator('.banner-line')).toContainText(':');
+  await expect(page.locator('.hero .pop', { hasText: 'Blocked' }).first()).toBeVisible();
+
+  // The winning blow plays out over the fight, with a banner, before the rewards appear.
+  await load(winning.save);
+  await page.evaluate(() => {
+    new MutationObserver(() => {
+      const f = document.querySelector('.finale');
+      if (f && !(window as any).finale) (window as any).finale = { text: f.textContent, overFight: !!document.querySelector('.stage') };
+    }).observe(document.body, { childList: true, subtree: true });
+  });
+  await page.locator('.hand .card').nth(winning.action.index).focus();
+  await page.keyboard.press('Enter');
+  if (await page.locator('.foe.targetable').count()) await page.locator(`.foe.targetable[data-index="${winning.action.target}"]`).click();
+  await expect.poll(() => page.evaluate(() => (window as any).finale ?? null)).toMatchObject({ text: expect.stringMatching(/Abated|defeated/), overFight: true });
+  await expect(page.getByRole('heading', { name: /Abated|Boss defeated/ })).toBeVisible({ timeout: 5000 });
+  expect(errors).toEqual([]);
 });

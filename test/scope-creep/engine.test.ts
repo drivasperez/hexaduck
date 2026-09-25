@@ -4,6 +4,7 @@ import {
   score, testCombat,
 } from '../../public/scope-creep/engine.js';
 import { playRun, randomPlayer } from './players.js';
+import { apply as applyWithEvents } from '../../public/scope-creep/engine.js';
 
 // The engine is plain JavaScript, whose inferred types are too narrow (combat starts as null).
 type State = any;
@@ -319,5 +320,40 @@ describe('Scope Creep runs', () => {
       expect(legalActions(s).map((x: unknown) => JSON.stringify(x))).toContain(JSON.stringify(a));
       apply(s, a);
     }
+  });
+});
+
+describe('Scope Creep events', () => {
+  it('notes a fully blocked enemy hit, so it can be shown rather than looking like nothing happened', () => {
+    const s = fight(['cow'], ['hedge', 'hedge', 'hedge']);
+    foe(s).move = 'stomp';  // 13 damage
+    play(s, 0); play(s, 0); play(s, 0);  // 15 Assurance
+    const events: any[] = [];
+    applyWithEvents(s, { type: 'end' }, events);
+    const cow = foe(s).uid;
+    expect(events).toContainEqual({ k: 'act', uid: cow, name: 'Methane Cow', move: 'Stomp' });
+    expect(events).toContainEqual({ k: 'hurt', from: cow, dmg: 13, blocked: 13, lost: 0, hp: s.hp, block: 2 });
+    // The enemy acts before its hit lands, and the next turn starts after.
+    const kinds = events.map(e => e.k);
+    expect(kinds.indexOf('act')).toBeLessThan(kinds.indexOf('hurt'));
+    expect(kinds.at(-1)).toBe('turn');
+  });
+
+  it('notes the killing blow, the death and the win in order', () => {
+    const s = fight(['car'], ['abate']);
+    foe(s).hp = 4;
+    const events: any[] = [];
+    applyWithEvents(s, { type: 'play', index: 0, target: 0 }, events);
+    expect(events.map(e => e.k)).toEqual(['hit', 'death', 'win']);
+    expect(events[0]).toMatchObject({ lost: 4, hp: 0 });
+    expect(s.screen).toBe('reward');
+  });
+
+  it('never changes the state by noting events', () => {
+    const a = fight(['diesel', 'car'], ['abate', 'hedge', 'survey']);
+    const b = JSON.parse(JSON.stringify(a));
+    const actions = [{ type: 'play', index: 1 }, { type: 'play', index: 1, target: 0 }, { type: 'end' }];
+    for (const act of actions) { apply(a, act); applyWithEvents(b, act, []); }
+    expect(JSON.stringify(b)).toBe(JSON.stringify(a));
   });
 });

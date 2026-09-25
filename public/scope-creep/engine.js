@@ -24,6 +24,12 @@ export const ACTS = 3;
 export const MAX_DUCKLINGS = 12;
 
 export class IllegalAction extends Error {}
+
+// While an action is applied, what happens is noted here for the interface to animate (who hit
+// whom, how much was blocked, who emitted). It's kept out of the state, so replays and scores
+// are unaffected.
+let sink = null;
+const note = ev => { if (sink) sink.push(ev); };
 const illegal = msg => { throw new IllegalAction(msg); };
 
 // ---------- randomness ----------
@@ -409,6 +415,7 @@ function hitEnemy(s, e, dmg) {
   e.hp -= lost;
   // Everything it was hit for this turn, blocked or not (the Boiler Room vents at 25).
   e.damageThisTurn += dmg;
+  note({ k: 'hit', uid: e.uid, dmg, blocked, lost, hp: e.hp, block: e.block });
   // Hitting something with Regulation hurts.
   if (e.st.regulation && e.hp > 0) hurtPlayer(s, e.st.regulation, null);
   if (e.hp <= 0) onEnemyDeath(s, e);
@@ -417,6 +424,7 @@ function hitEnemy(s, e, dmg) {
 function onEnemyDeath(s, e) {
   const c = s.combat;
   c.log.push(`${e.name} is abated.`);
+  note({ k: 'death', uid: e.uid });
   for (const other of alive(c)) FOES[other.id].onAllyDeath?.(other, api(s), e);
 }
 
@@ -437,6 +445,7 @@ function hurtPlayer(s, dmg, attacker) {
   const blocked = Math.min(c.p.block, dmg);
   c.p.block -= blocked;
   if (dmg - blocked > 0) loseHp(s, dmg - blocked);
+  note({ k: 'hurt', from: attacker?.uid ?? null, dmg, blocked, lost: dmg - blocked, hp: s.hp, block: c.p.block });
   if (attacker && c.p.st.regulation && attacker.hp > 0) hitEnemy(s, attacker, c.p.st.regulation);
 }
 
@@ -444,7 +453,7 @@ function loseHp(s, n) {
   s.hp -= n;
   if (s.hp <= 0) {
     if (has(s, 'lifeJacket') && !s.lifeJacketUsed) { s.lifeJacketUsed = true; s.hp = Math.ceil(s.maxHp * 0.3); s.combat?.log.push('Your Life Jacket keeps you afloat.'); }
-    else { s.hp = 0; s.screen = 'gameover'; if (s.combat) s.combat.over = true; }
+    else { s.hp = 0; s.screen = 'gameover'; if (s.combat) s.combat.over = true; note({ k: 'defeat' }); }
   }
 }
 
@@ -478,12 +487,13 @@ function startTurn(s) {
   if (c.turn === 1) draw += s.relics.reduce((n, id) => n + (RELICS[id].firstTurnDraw || 0), 0);
   st.nextEnergy = 0; st.drained = 0; st.nextDraw = 0; st.jammed = 0;
   if (st.nextBlock) { c.p.block += st.nextBlock; st.nextBlock = 0; }
-  if (st.liability) { loseHp(s, st.liability); st.liability--; if (s.screen === 'gameover') return; }
+  if (st.liability) { loseHp(s, st.liability); note({ k: 'liability', uid: null, n: st.liability, hp: s.hp }); st.liability--; if (s.screen === 'gameover') return; }
   const g = api(s);
   if (c.powers.flightFormation) c.p.block += c.ducklings * c.powers.flightFormation;
   if (c.powers.litigationHold) g.apply('all', 'liability', c.powers.litigationHold);
   for (const id of s.relics) RELICS[id].turnStart?.(g);
   drawCards(s, Math.max(0, draw));
+  note({ k: 'turn', turn: c.turn });
   checkWin(s);
 }
 
@@ -492,7 +502,7 @@ function endTurn(s) {
   const g = api(s);
   for (const card of c.hand) CARDS[card.id].endOfTurnInHand?.(g);
   if (s.screen === 'gameover') return;
-  if (c.ducklings) peck(s, c.powers.flockTogether ? 2 : 1);
+  if (c.ducklings) { note({ k: 'pecks', n: c.ducklings }); peck(s, c.powers.flockTogether ? 2 : 1); }
   if (c.powers.imprinting) g.hatch(c.powers.imprinting, false);
   for (const id of s.relics) RELICS[id].turnEnd?.(g);
   c.handAtEnd = c.hand.length;
@@ -508,6 +518,7 @@ function endTurn(s) {
     if (e.st.liability) {
       const lost = Math.min(e.hp, e.st.liability);
       e.hp -= lost; e.st.liability--;
+      note({ k: 'liability', uid: e.uid, n: lost, hp: e.hp });
       if (e.hp <= 0) { onEnemyDeath(s, e); continue; }
     }
     FOES[e.id].onTurnStart?.(e, api(s));
@@ -544,6 +555,7 @@ function enemyAct(s, e) {
   const id = resolveMove(s, e);
   const move = def.moves[id];
   c.screen = 'enemy';
+  note({ k: 'act', uid: e.uid, name: e.name, move: move.name });
   for (const step of move.steps) {
     if (e.hp <= 0 || e.gone || s.screen === 'gameover') break;
     if (step.attack !== undefined) {
@@ -551,9 +563,10 @@ function enemyAct(s, e) {
       const base = step.attack + (def.attackBonus ? def.attackBonus(e) : 0);
       for (let i = 0; i < n && e.hp > 0 && s.screen !== 'gameover'; i++) hurtPlayer(s, enemyDamage(s, e, base), e);
     }
-    if (step.block) e.block += step.block;
+    if (step.block) { e.block += step.block; note({ k: 'guard', uid: e.uid, n: step.block, block: e.block }); }
     if (step.emit) emit(s, e, step.emit);
-    if (step.buff) for (const [k, v] of Object.entries(step.buff)) e.st[k] = (e.st[k] || 0) + v;
+    if (step.buff) { for (const [k, v] of Object.entries(step.buff)) e.st[k] = (e.st[k] || 0) + v; note({ k: 'buff', uid: e.uid }); }
+    if (step.debuff || step.drain || step.jam || step.scare || step.addCard || step.junkOffset) note({ k: 'debuff', uid: e.uid });
     if (step.debuff) for (const [k, v] of Object.entries(step.debuff)) {
       if (k === 'liability') c.p.st.liability = (c.p.st.liability || 0) + v;
       else c.pending[k] = (c.pending[k] || 0) + v;
@@ -567,9 +580,10 @@ function enemyAct(s, e) {
       const minion = makeEnemy(s, step.spawn);
       c.enemies.splice(c.enemies.indexOf(e), 0, minion);
       chooseMove(s, minion);
+      note({ k: 'spawn', uid: minion.uid });
     }
     if (step.junkOffset) { offset(s, step.junkOffset, true); c.log.push(`${e.name} sells you ${step.junkOffset} tonnes of offsets. They look suspiciously cheap.`); }
-    if (step.escape) { e.gone = true; c.log.push(`${e.name} takes off, and its emissions go with it.`); }
+    if (step.escape) { e.gone = true; note({ k: 'escape', uid: e.uid }); c.log.push(`${e.name} takes off, and its emissions go with it.`); }
   }
   c.screen = null;
   e.history.push(id);
@@ -578,8 +592,9 @@ function enemyAct(s, e) {
 
 function emit(s, e, n) {
   const c = s.combat;
-  if (c.p.st.capAndTrade) { c.p.block += n; return; }
+  if (c.p.st.capAndTrade) { c.p.block += n; note({ k: 'emit', uid: e.uid, n, captured: true }); return; }
   addCarbon(s, n);
+  note({ k: 'emit', uid: e.uid, n });
   if (has(s, 'carbonLedger')) c.p.block += n;
   if (has(s, 'methaneDetector')) e.st.measured = (e.st.measured || 0) + 1;
 }
@@ -629,6 +644,7 @@ function cardChoices(s, n, rarities) {
 
 function winCombat(s) {
   const c = s.combat;
+  note({ k: 'win', kind: c.kind });
   const r = runApi(s);
   if (c.powers.netZeroPledge) removeCarbon(s, 2);
   for (const id of s.relics) RELICS[id].combatEnd?.(r);
@@ -716,8 +732,14 @@ function nextAct(s) {
 
 // ---------- actions ----------
 // Applies one action to the state (changing it) and returns it. Throws IllegalAction if the
-// action isn't allowed right now, leaving the state as it was.
-export function apply(s, a) {
+// action isn't allowed right now, leaving the state as it was. Pass an array as `events` to
+// have what happened noted in it, in order (see `note`).
+export function apply(s, a, events = null) {
+  sink = events;
+  try { return applyAction(s, a); } finally { sink = null; }
+}
+
+function applyAction(s, a) {
   if (s.screen === 'gameover' || s.screen === 'victory') illegal('the run is over');
   switch (s.screen) {
     case 'mandate': {

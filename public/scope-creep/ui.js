@@ -72,11 +72,13 @@ async function startRun() {
 
 // ---------- actions ----------
 function act(action, from = null) {
+  if (ui.busy) return;
   ui.pendingPlay = action.type === 'play' ? action.index : undefined;
   const before = snapshot();
   const ghost = from ? { rect: from.getBoundingClientRect(), node: from.cloneNode(true) } : null;
+  const events = [];
   try {
-    E.apply(s, action);
+    E.apply(s, action, events);
   } catch (e) {
     if (e instanceof E.IllegalAction) { flash(e.message); return; }
     throw e;
@@ -85,11 +87,117 @@ function act(action, from = null) {
   persist();
   ui.selected = null; ui.tool = null; ui.hint = '';
   if (s.screen !== 'select') ui.picks = [];
+  if (ghost) { flyAway(ghost); from.classList.add('lifted'); }
+  // Enemy turns and the end of a fight are played out on screen before the result is shown.
+  if (events.some(e => ['act', 'win', 'defeat', 'pecks', 'liability'].includes(e.k)) && document.querySelector('.stage')) {
+    ui.busy = true;
+    playback(events).finally(() => { ui.busy = false; render(); });
+    return;
+  }
   render();
   pops(before);
   sounds(before, action);
   if (action.type === 'play' && s.combat && before.attack) jolt(document.querySelector('.hero'), 'strike');
-  if (ghost) flyAway(ghost);
+}
+
+// ---------- playback ----------
+const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+const wait = ms => new Promise(r => setTimeout(r, reduced() ? ms * 0.5 : ms));
+const foeEl = uid => document.querySelector(`.foe[data-uid="${uid}"]`);
+
+// Sets a health bar and its label, and the shield badge beside it, to new values.
+function setBar(el, hp, max, block) {
+  if (!el) return;
+  const bar = el.querySelector('.hpbar');
+  if (bar && hp !== undefined) { bar.querySelector('i').style.width = `${Math.max(0, hp / max) * 100}%`; bar.querySelector('span').textContent = `${Math.max(0, hp)} / ${max}`; }
+  if (block === undefined) return;
+  let shield = el.querySelector('.shield');
+  if (!block) { shield?.remove(); return; }
+  if (!shield) { shield = h('span', { class: 'shield' }); el.querySelector('.bars')?.prepend(shield); }
+  shield.textContent = block;
+  jolt(shield, 'flash');
+}
+
+function banner(text) {
+  const el = document.querySelector('.stage .banner-line');
+  if (el) { el.textContent = text; jolt(el, 'flash'); }
+}
+
+function finale(text, cls = '') {
+  const stage = document.querySelector('.stage');
+  if (!stage) return;
+  stage.append(h('div', { class: `finale ${cls}` }, h('span', {}, text)));
+}
+
+async function playback(events) {
+  const c = s.combat;
+  // Ending the turn clears the hand away so the enemies' turn has the stage.
+  if (events.some(e => e.k === 'act' || e.k === 'pecks')) document.querySelector('.stage')?.classList.add('resolving');
+  let pecking = false;
+  const maxOf = uid => (c?.enemies.find(e => e.uid === uid)?.maxHp ?? s.lastCombat?.maxHp?.[uid] ?? 1);
+  for (const ev of events) {
+    const foe = ev.uid ? foeEl(ev.uid) : null;
+    switch (ev.k) {
+      case 'pecks': pecking = true; banner('Your ducklings peck.'); jolt(document.querySelector('.flock'), 'hop'); await wait(160); break;
+      case 'hit': {
+        if (!foe) break;
+        const max = Number(foe.dataset.max) || maxOf(ev.uid);
+        setBar(foe, ev.hp, max, ev.block);
+        if (ev.lost) { pop(foe, `−${ev.lost}`, pecking ? 'small' : ''); jolt(foe, 'shake'); if (!pecking) Sound.fx('hit'); else Sound.fx('duck'); }
+        else if (ev.blocked) { pop(foe, '🛡 Blocked', 'block'); Sound.fx('block'); }
+        await wait(pecking ? 80 : 170);
+        break;
+      }
+      case 'death': foe?.classList.add('dying'); await wait(480); break;
+      case 'act': {
+        pecking = false;
+        banner(`${ev.name}: ${ev.move}`);
+        if (foe) jolt(foe, 'lunge');
+        await wait(300);
+        break;
+      }
+      case 'hurt': {
+        const hero = document.querySelector('.hero');
+        setBar(hero, ev.hp, s.maxHp, ev.block);
+        if (ev.lost) { pop(hero, `−${ev.lost}`); jolt(hero, 'ouch'); Sound.fx('hurt'); }
+        if (ev.blocked) {
+          pop(hero, ev.lost ? `🛡 ${ev.blocked}` : '🛡 Blocked', `block${ev.lost ? ' small' : ''}`);
+          if (!ev.lost) { jolt(hero, 'parry'); Sound.fx('block'); }
+        }
+        await wait(ev.lost ? 380 : 330);
+        break;
+      }
+      case 'guard': if (foe) { setBar(foe, undefined, 1, ev.block); pop(foe, `+${ev.n} 🛡`, 'block small'); } await wait(220); break;
+      case 'emit': {
+        if (foe) {
+          pop(foe, ev.captured ? `+${ev.n} 🛡` : `+${ev.n} CO₂`, ev.captured ? 'block small' : 'smoke');
+          foe.append(h('span', { class: 'puff', 'aria-hidden': 'true' }));
+          setTimeout(() => foe.querySelector('.puff')?.remove(), 1200);
+        }
+        Sound.fx('emit');
+        await wait(280);
+        break;
+      }
+      case 'buff': if (foe) pop(foe, '▲', 'buff'); await wait(200); break;
+      case 'debuff': pop(document.querySelector('.hero'), '✦', 'debuff'); await wait(200); break;
+      case 'escape': foe?.classList.add('escaping'); await wait(500); break;
+      case 'liability': {
+        const el = ev.uid ? foe : document.querySelector('.hero');
+        if (el) { setBar(el, ev.hp, ev.uid ? Number(el.dataset.max) || maxOf(ev.uid) : s.maxHp); pop(el, `−${ev.n} ⚖️`); }
+        await wait(260);
+        break;
+      }
+      case 'turn': banner('Your turn'); await wait(250); break;
+      case 'win': {
+        await wait(250);
+        finale({ fight: 'Abated!', elite: 'Elite abated!', boss: 'Boss defeated!' }[ev.kind] || 'Abated!', 'win');
+        Sound.fx('reward');
+        await wait(1300);
+        break;
+      }
+      case 'defeat': finale('Credibility lost', 'lose'); Sound.fx('gameover'); await wait(1600); break;
+    }
+  }
 }
 
 // A played card lifts off from where it was and fades.
@@ -239,6 +347,7 @@ function topBar() {
 }
 
 function useTool(slot) {
+  if (ui.busy) return;
   const id = s.potions[slot];
   if (!s.combat) { ui.overlay = { tool: slot }; render(); return; }
   if (E.TOOLS[id].target === 'enemy') { ui.tool = slot; ui.selected = null; ui.hint = 'Choose a target.'; render(); return; }
@@ -469,7 +578,7 @@ function combatScreen() {
     const def = E.FOES[e.id];
     const size = def.boss ? 'boss' : def.elite ? 'elite' : def.minion ? 'minion' : '';
     return h(picking && !dead ? 'button' : 'div', {
-      class: `foe ${size}${dead ? ' dead' : ''}${picking && !dead ? ' targetable' : ''}`, 'data-uid': e.uid, 'data-index': dead ? null : index,
+      class: `foe ${size}${dead ? ' dead' : ''}${picking && !dead ? ' targetable' : ''}`, 'data-uid': e.uid, 'data-index': dead ? null : index, 'data-max': e.maxHp,
       type: picking && !dead ? 'button' : null,
       'aria-label': `${e.name}, ${e.hp} of ${e.maxHp} health${picking && !dead ? `. Target ${index + 1}` : ''}`,
       onclick: picking && !dead ? () => target(index) : null,
@@ -553,7 +662,7 @@ let drag = null;
 const living = () => s.combat.enemies.filter(e => e.hp > 0 && !e.gone);
 
 function startDrag(ev, i) {
-  if (ev.button !== 0 || drag || !s.combat) return;
+  if (ev.button !== 0 || drag || !s.combat || ui.busy) return;
   const el = ev.currentTarget;
   const card = s.combat.hand[i];
   const def = E.CARDS[card.id];
@@ -727,6 +836,8 @@ const powerName = k => POWER_NAMES[k] || k;
 const powerText = k => (POWER_CARD[k] ? E.CARDS[POWER_CARD[k]].text(false) : '');
 
 function pickCard(i, el = document.querySelectorAll('.hand .card')[i]) {
+  // While a turn or the end of a fight plays out, the cards on screen are stale.
+  if (ui.busy || !s.combat) return;
   const card = s.combat.hand[i];
   const def = E.CARDS[card.id];
   ui.tool = null;
@@ -740,6 +851,7 @@ function pickCard(i, el = document.querySelectorAll('.hand .card')[i]) {
 }
 
 function target(index) {
+  if (ui.busy || !s.combat) return;
   if (ui.tool !== null) act({ type: 'tool', slot: ui.tool, target: index });
   else if (ui.selected !== null) act({ type: 'play', index: ui.selected, target: index }, document.querySelectorAll('.hand .card')[ui.selected]);
 }
@@ -907,7 +1019,7 @@ addEventListener('keydown', e => {
     else if (ui.selected !== null || ui.tool !== null) { ui.selected = null; ui.tool = null; ui.hint = ''; render(); }
     return;
   }
-  if (!s || s.screen !== 'combat' || ui.overlay) return;
+  if (!s || s.screen !== 'combat' || ui.overlay || ui.busy) return;
   if (e.key === 'e' || e.key === 'E') { act({ type: 'end' }); return; }
   const n = Number(e.key);
   if (!Number.isInteger(n) || n < 1) return;

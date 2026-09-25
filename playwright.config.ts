@@ -11,6 +11,7 @@ export default defineConfig({
     baseURL: `http://localhost:${PORT}`,
     // Set PW_CHANNEL=chrome to use an installed Chrome instead of `npx playwright install chromium`.
     channel: process.env.PW_CHANNEL,
+    screenshot: 'only-on-failure',
   },
   projects: [
     { name: 'desktop', use: { ...devices['Desktop Chrome'], channel: process.env.PW_CHANNEL } },

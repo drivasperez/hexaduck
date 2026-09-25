@@ -349,3 +349,31 @@ b.kw { color: var(--duck); font-weight: 700; text-decoration: underline dotted r
   .title .hero-card { grid-template-columns: 1fr; text-align: center; justify-items: center; }
   .title .actions { justify-content: center; }
 }
+
+/* ---------- playback of enemy turns and the end of a fight ---------- */
+.pop.block { color: #CFF3FB; text-shadow: 0 3px 0 #1D5E72, 0 6px 14px rgba(0, 0, 0, 0.6); font-size: 30px; }
+.pop.block.small { font-size: 20px; top: 34%; }
+.pop.buff { color: #E1D3FF; text-shadow: 0 3px 0 #4A2F80; }
+.pop.debuff { color: #C9F3DF; text-shadow: 0 3px 0 #1E6B4A; font-size: 24px; }
+.foe.lunge .figure span { animation: lunge 0.34s ease-in-out; }
+@keyframes lunge { 45% { translate: -70px 6px; rotate: -8deg; scale: 1.08; } }
+.hero.parry .figure.duck { animation: parry 0.36s ease-out; }
+@keyframes parry { 30% { translate: -6px 0; filter: drop-shadow(0 0 18px #7FD9EE) brightness(1.15); } }
+.hero.parry .shield, .shield.flash { animation: flash-shield 0.45s ease-out; }
+@keyframes flash-shield { 30% { scale: 1.45; filter: drop-shadow(0 0 10px #BDEBF6); } }
+.flock.hop svg { animation: hop 0.3s ease-out; }
+@keyframes hop { 50% { translate: 8px -10px; } }
+.foe.dying { opacity: 0; scale: 0.6; filter: blur(4px) grayscale(1); transition: opacity 0.45s, scale 0.45s, filter 0.45s; }
+.foe.escaping { translate: 60vw -40vh; rotate: -12deg; opacity: 0; transition: translate 0.5s ease-in, opacity 0.5s, rotate 0.5s; }
+.puff { position: absolute; left: 50%; top: 50%; width: 60px; height: 60px; margin: -30px; border-radius: 50%; background: radial-gradient(circle, rgba(220, 210, 195, 0.8), rgba(220, 210, 195, 0)); pointer-events: none; animation: puff 1.2s ease-out forwards; }
+@keyframes puff { from { scale: 0.4; opacity: 0.9; } to { translate: 20px -120px; scale: 2.6; opacity: 0; } }
+.banner-line.flash { animation: flash-banner 0.35s ease-out; }
+@keyframes flash-banner { from { scale: 1.12; background: rgba(255, 210, 63, 0.3); } }
+.finale { position: absolute; inset: 0; z-index: 70; display: grid; place-items: center; pointer-events: none; background: radial-gradient(ellipse at center, rgba(5, 20, 28, 0.55), rgba(5, 20, 28, 0) 70%); animation: fade-in 0.3s ease-out; }
+.finale span { font-family: var(--serif); font-weight: 800; font-size: clamp(48px, 9vw, 110px); color: var(--duck); text-shadow: 0 5px 0 #9A6E00, 0 16px 40px rgba(0, 0, 0, 0.6); animation: stamp 0.5s cubic-bezier(0.2, 1.4, 0.4, 1) both; }
+.finale.lose span { color: #FFB3A0; text-shadow: 0 5px 0 #7A1F10, 0 16px 40px rgba(0, 0, 0, 0.6); }
+@keyframes stamp { from { scale: 2.2; opacity: 0; rotate: -6deg; } }
+@keyframes fade-in { from { opacity: 0; } }
+.foe .pop { top: 58%; } .hero .pop { top: 48%; }
+.pop.small { font-size: 22px; }
+.stage.resolving .hand .card { translate: calc(var(--k) * var(--spread)) calc(var(--ch) * 0.9); opacity: 0; transition: translate 0.3s ease-in, opacity 0.3s; }
