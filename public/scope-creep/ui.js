@@ -6,6 +6,7 @@ import * as E from './engine.js';
 import { KEYWORDS } from './cards.js';
 import { createLeaderboard, savedName } from '/shared/leaderboard.js';
 import { Sound } from './audio.js';
+import { duckSVG, ducklingSVG, sceneSVG } from './art.js';
 
 const SAVE_KEY = 'scope-creep-run';
 const app = document.getElementById('app');
@@ -71,6 +72,7 @@ async function startRun() {
 
 // ---------- actions ----------
 function act(action, from = null) {
+  ui.pendingPlay = action.type === 'play' ? action.index : undefined;
   const before = snapshot();
   const ghost = from ? { rect: from.getBoundingClientRect(), node: from.cloneNode(true) } : null;
   try {
@@ -86,13 +88,16 @@ function act(action, from = null) {
   render();
   pops(before);
   sounds(before, action);
+  if (action.type === 'play' && s.combat && before.attack) jolt(document.querySelector('.hero'), 'strike');
   if (ghost) flyAway(ghost);
 }
 
 // A played card lifts off from where it was and fades.
 function flyAway({ rect, node }) {
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  node.classList.remove('held', 'ready', 'returning', 'lifted', 'selected');
   node.classList.add('ghost');
+  node.style.transform = '';
   Object.assign(node.style, { left: `${rect.left}px`, top: `${rect.top}px`, width: `${rect.width}px`, height: `${rect.height}px` });
   document.body.append(node);
   requestAnimationFrame(() => node.classList.add('go'));
@@ -123,7 +128,8 @@ function flash(text) {
 // Floating numbers for what the last action changed.
 function snapshot() {
   const c = s.combat;
-  return { hp: s.hp, carbon: s.carbon, heat: E.heat(s), screen: s.screen, block: c?.p.block ?? 0, ducklings: c?.ducklings ?? 0, foes: new Map((c?.enemies || []).map(e => [e.uid, e.hp + e.block])) };
+  const played = s.combat && ui.pendingPlay !== undefined ? s.combat.hand[ui.pendingPlay] : null;
+  return { attack: played && E.CARDS[played.id].type === 'attack', hp: s.hp, carbon: s.carbon, heat: E.heat(s), screen: s.screen, block: c?.p.block ?? 0, ducklings: c?.ducklings ?? 0, foes: new Map((c?.enemies || []).map(e => [e.uid, e.hp + e.block])) };
 }
 function pops(before) {
   const c = s.combat;
@@ -188,19 +194,19 @@ function cardView(card, { onClick, disabled, selected, price, extra, preview } =
   const typeName = def.type[0].toUpperCase() + def.type.slice(1);
   return h('button', {
     type: 'button',
-    class: `card ${def.type}${card.up ? ' up' : ''}${disabled ? ' disabled' : ''}${selected ? ' selected' : ''}${extra ? ` ${extra}` : ''}`,
+    class: `card ${def.type} r-${def.rarity}${def.fossil ? ' fossil' : ''}${card.up ? ' up' : ''}${disabled ? ' disabled' : ''}${selected ? ' selected' : ''}${extra ? ` ${extra}` : ''}`,
     'aria-label': `${E.cardName(card)}, ${cost === null ? 'unplayable' : `costs ${cost}`}. ${def.text(card.up)}`,
     'aria-pressed': selected ? 'true' : null,
     onclick: onClick,
   },
-  cost !== null ? h('span', { class: `cost${card.up && def.upCost !== undefined ? ' cheaper' : ''}` }, cost) : null,
-  def.fossil ? h('span', { class: 'fossil', tip: `Fossil: ${KEYWORDS.Fossil}` }, 'FOSSIL') : null,
-  h('span', { class: 'name' }, E.cardName(card)),
-  h('span', { class: 'type' }, typeName),
-  h('span', { class: 'text' }, rich(def.text(card.up))),
-  h('span', { class: 'art', 'aria-hidden': 'true' }, ART[card.id] || ''),
+  cost !== null ? h('span', { class: `gem${card.up && def.upCost !== undefined ? ' cheaper' : ''}` }, cost) : null,
+  h('span', { class: 'banner' }, h('span', { class: 'name' }, E.cardName(card))),
+  h('span', { class: 'window', 'aria-hidden': 'true' }, h('span', { class: 'art' }, ART[card.id] || ''),
+    def.fossil ? h('span', { class: 'stamp', tip: `Fossil: ${KEYWORDS.Fossil}` }, 'Fossil') : null),
+  h('span', { class: 'ribbon' }, typeName),
+  // One wrapper, so the text flows as a paragraph inside the centred box.
+  h('span', { class: 'text' }, h('span', {}, rich(def.text(card.up)))),
   preview ? h('span', { class: 'preview', tip: 'What this card would do right now, with every modifier counted.' }, preview) : null,
-  ['uncommon', 'rare'].includes(def.rarity) ? h('span', { class: `rarity ${def.rarity}`, tip: def.rarity }) : null,
   price !== undefined ? h('span', { class: 'price' }, `${price} £`) : null);
 }
 
@@ -247,6 +253,7 @@ function render() {
   Sound.mood(!s || ui.view === 'title' ? 'map' : s.screen === 'combat' ? s.combat.kind === 'fight' ? 'fight' : s.combat.kind : ['gameover', 'victory'].includes(s.screen) ? 'quiet' : 'map');
   if (ui.view === 'title' || !s) { app.append(titleScreen()); return; }
   if (ui.view === 'how') { app.append(howScreen()); return; }
+  if (s.screen !== 'combat') app.append(h('div', { class: 'app-bg', 'aria-hidden': 'true' }, sceneEl(s.act, false, E.heat(s))));
   app.append(...topBar());
   const screen = {
     mandate: mandateScreen, event: eventScreen, result: resultScreen, rest: restScreen, map: mapScreen, combat: combatScreen,
@@ -262,22 +269,26 @@ function titleScreen() {
   const outdated = existing?.outdated;
   if (outdated) existing = null;
   const finished = existing && ['gameover', 'victory'].includes(existing.state.screen);
-  return h('main', { class: 'screen title' },
-    h('h1', {}, 'Scope Creep'),
-    h('p', { class: 'lede' }, 'A deckbuilder about ducks and emissions accounting. Climb three scopes, keep your Credibility, and watch your carbon: power now makes every later fight harder.'),
-    outdated ? h('p', { class: 'lede', style: 'color: var(--duck)' }, 'Scope Creep has been updated since your last run, so that run can\'t be restored. Sorry! A new run awaits.') : null,
-    h('div', { class: 'actions' },
-      existing && !finished
-        ? h('button', { type: 'button', class: 'btn primary', onclick: () => { save = existing.raw; s = existing.state; ui.view = 'run'; render(); } }, `Continue (Act ${existing.state.act}, floor ${existing.state.floor})`)
-        : null,
-      h('button', { type: 'button', class: existing && !finished ? 'btn' : 'btn primary', onclick: () => (existing && !finished && !confirm('Abandon your current run and start a new one?') ? null : startRun()) }, 'New run'),
-      // A finished run stays saved until the next one starts, so its score can still be posted.
-      finished && existing.raw.runId && !existing.raw.posted
-        ? h('button', { type: 'button', class: 'btn', onclick: () => { save = existing.raw; s = existing.state; ui.view = 'run'; ui.posted = null; render(); } }, 'Post your last run')
-        : null,
-      h('button', { type: 'button', class: 'btn', onclick: () => { ui.view = 'how'; render(); } }, 'How to play'),
-    ),
-    h('p', { style: 'margin-top: 28px' }, h('a', { class: 'home', href: '/' }, '‹ All games')));
+  const duck = h('div', { class: 'duckart', 'aria-hidden': 'true' });
+  duck.innerHTML = duckSVG();
+  return h('main', { class: 'title' },
+    sceneEl(1),
+    h('div', { class: 'hero-card' }, duck, h('div', {},
+      h('p', { class: 'tag' }, 'A duck deckbuilder'),
+      h('h1', {}, 'Scope', h('br'), 'Creep'),
+      h('p', { class: 'lede' }, 'Climb three scopes of emissions, keep your Credibility, and watch your carbon: power now makes every later fight harder.'),
+      outdated ? h('p', { class: 'note' }, 'Scope Creep has been updated since your last run, so that run can\'t be restored. Sorry! A new run awaits.') : null,
+      h('div', { class: 'actions' },
+        existing && !finished
+          ? h('button', { type: 'button', class: 'btn primary', onclick: () => { save = existing.raw; s = existing.state; ui.view = 'run'; render(); } }, `Continue (Act ${existing.state.act}, floor ${existing.state.floor})`)
+          : null,
+        h('button', { type: 'button', class: existing && !finished ? 'btn' : 'btn primary', onclick: () => (existing && !finished && !confirm('Abandon your current run and start a new one?') ? null : startRun()) }, 'New run'),
+        // A finished run stays saved until the next one starts, so its score can still be posted.
+        finished && existing.raw.runId && !existing.raw.posted
+          ? h('button', { type: 'button', class: 'btn', onclick: () => { save = existing.raw; s = existing.state; ui.view = 'run'; ui.posted = null; render(); } }, 'Post your last run')
+          : null,
+        h('button', { type: 'button', class: 'btn', onclick: () => { ui.view = 'how'; render(); } }, 'How to play')),
+      h('p', { style: 'margin-top: 26px' }, h('a', { class: 'home', href: '/' }, '‹ All games')))));
 }
 
 function howScreen() {
@@ -297,8 +308,17 @@ function howScreen() {
     h('button', { type: 'button', class: 'btn primary', onclick: () => { ui.view = s ? 'run' : 'title'; render(); } }, 'Back')));
 }
 
+const EVENT_ART = {
+  salesman: '🧑‍💼', pond: '🦆', dataGap: '📉', campaign: '📺', supplier: '🏭', keynote: '🎤', flood: '🌊', spreadsheet: '📊',
+  regulator: '🕵️', migration: '🦢', innovation: '💡', heatwave: '🥵',
+};
 function panel(title, text, ...rest) {
-  return h('main', { class: 'screen' }, h('section', { class: 'panel' }, title ? h('h2', {}, title) : null, text ? h('p', {}, rich(text)) : null, ...rest));
+  return artPanel(null, title, text, ...rest);
+}
+function artPanel(icon, title, text, ...rest) {
+  return h('main', { class: 'screen' }, h('section', { class: `panel${icon ? ' with-art' : ''}` },
+    icon ? h('div', { class: 'medallion', 'aria-hidden': 'true' }, icon) : null,
+    title ? h('h2', {}, title) : null, text ? h('p', {}, rich(text)) : null, ...rest));
 }
 
 function optionButtons(options, onPick) {
@@ -308,26 +328,27 @@ function optionButtons(options, onPick) {
 }
 
 function mandateScreen() {
-  return panel('Your mandate', 'The board has given you a mandate to get the company\'s emissions under control. Before you start, choose how to begin.',
+  return artPanel('📜', 'Your mandate', 'The board has given you a mandate to get the company\'s emissions under control. Before you start, choose how to begin.',
     optionButtons(s.mandate.map(i => E.MANDATES[i]), i => act({ type: 'choose', index: s.mandate[i] })));
 }
 
 function eventScreen() {
   const ev = E.EVENTS[s.event.id];
-  return panel(ev.title, ev.text, optionButtons(E.eventOptions(s), i => act({ type: 'choose', index: i })));
+  return artPanel(EVENT_ART[s.event.id] || '❓', ev.title, ev.text, optionButtons(E.eventOptions(s), i => act({ type: 'choose', index: i })));
 }
 
 function resultScreen() {
-  return panel(s.result.title, s.result.text, h('button', { type: 'button', class: 'btn primary', onclick: () => act({ type: 'continue' }) }, 'Continue'));
+  const icon = s.result.title === 'Treasure' ? '🎁' : s.result.title === 'Your mandate' ? '📜' : Object.entries(E.EVENTS).find(([, ev]) => ev.title === s.result.title)?.[0];
+  return artPanel(EVENT_ART[icon] || (icon?.length <= 2 ? icon : '✅'), s.result.title, s.result.text, h('button', { type: 'button', class: 'btn primary', onclick: () => act({ type: 'continue' }) }, 'Continue'));
 }
 
 function restScreen() {
-  return panel('A rest pond', 'Quiet water, and a moment to think.', optionButtons(E.restOptions(s), (_, o) => act({ type: 'rest', choice: o.id })));
+  return artPanel('🌿', 'A rest pond', 'Quiet water, and a moment to think.', optionButtons(E.restOptions(s), (_, o) => act({ type: 'rest', choice: o.id })));
 }
 
 function mapScreen() {
-  const W = 80, PAD = 50, rows = E.ROWS;
-  const width = PAD * 2 + (E.COLS - 1) * W, height = PAD * 2 + rows * W;
+  const W = 80, PAD = 50, TOP = 60, rows = E.ROWS;
+  const width = PAD * 2 + (E.COLS - 1) * W, height = PAD * 2 + TOP + rows * W;
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
   svg.setAttribute('role', 'group');
@@ -342,9 +363,16 @@ function mapScreen() {
     const targets = r === rows - 1 ? ['boss'] : node.n;
     for (const t of targets) {
       const isWalked = walked[r] === c && (t === 'boss' ? s.pos?.row === rows : walked[r + 1] === t);
-      svg.append(ns('line', { x1: X(c), y1: Y(r), x2: X(t), y2: t === 'boss' ? Y(rows) + 12 : Y(r + 1), class: `edge${isWalked ? ' walked' : ''}` }));
+      const x1 = X(c), y1 = Y(r), x2 = X(t), y2 = t === 'boss' ? Y(rows) + 30 : Y(r + 1);
+      const bend = ((r * 7 + c * 13 + (t === 'boss' ? 5 : t) * 3) % 5 - 2) * 6;
+      svg.append(ns('path', { d: `M ${x1} ${y1} Q ${(x1 + x2) / 2 + bend} ${(y1 + y2) / 2} ${x2} ${y2}`, class: `edge${isWalked ? ' walked' : ''}` }));
     }
   });
+  const title = ns('text', { x: width / 2, y: 44, class: 'actname' });
+  title.textContent = E.ACT_NAMES[s.act];
+  svg.append(title);
+  const rings = ns('g', { class: 'rings' });
+  svg.append(rings);
   const nodes = [];
   for (let r = 0; r < rows; r++) s.map[r].forEach((node, c) => { if (node) nodes.push({ r, c, t: node.t }); });
   nodes.push({ r: rows, c: 'boss', t: 'boss' });
@@ -361,6 +389,8 @@ function mapScreen() {
       g.addEventListener('click', () => act({ type: 'path', col: n.c }));
       g.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); act({ type: 'path', col: n.c }); } });
     }
+    // The pulsing ring lives in its own layer, so the node itself keeps a steady size.
+    if (isOpen) rings.append(ns('circle', { r: n.t === 'boss' ? 30 : 22, cx: X(n.c), cy: Y(n.r), class: 'ring' }));
     g.append(ns('circle', { r: n.t === 'boss' ? 30 : 22 }));
     const label = ns('text', { style: n.t === 'boss' ? 'font-size: 30px' : '' });
     label.textContent = ICON[n.t];
@@ -416,55 +446,232 @@ function intentView(e) {
       i.kind === 'attack' ? ` ${i.n}${i.times > 1 ? `×${i.times}` : ''}` : i.kind === 'emit' ? ` +${i.n}` : i.kind === 'block' ? ` ${i.n}` : '')));
 }
 
+const sceneCache = new Map();
+function sceneEl(act, boss = false, heat = 0) {
+  const key = `${act}:${boss}:${heat}`;
+  if (!sceneCache.has(key)) sceneCache.set(key, sceneSVG(act, { boss, heat }));
+  const el = h('div', { class: 'backdrop' });
+  el.innerHTML = sceneCache.get(key);
+  return el;
+}
+const backdrop = boss => sceneEl(s.act, boss, E.heat(s));
+
 function combatScreen() {
   const c = s.combat;
   const living = c.enemies.filter(e => e.hp > 0 && !e.gone);
   const picking = ui.selected !== null || ui.tool !== null;
+
+  // Enemies, standing on the right.
   const foes = h('div', { class: 'foes' }, c.enemies.filter(e => !e.gone).map(e => {
     const dead = e.hp <= 0;
     const index = living.indexOf(e);
     const def = E.FOES[e.id];
+    const size = def.boss ? 'boss' : def.elite ? 'elite' : def.minion ? 'minion' : '';
     return h(picking && !dead ? 'button' : 'div', {
-      class: `foe${dead ? ' dead' : ''}${picking && !dead ? ' targetable' : ''}`, 'data-uid': e.uid,
+      class: `foe ${size}${dead ? ' dead' : ''}${picking && !dead ? ' targetable' : ''}`, 'data-uid': e.uid, 'data-index': dead ? null : index,
       type: picking && !dead ? 'button' : null,
       'aria-label': `${e.name}, ${e.hp} of ${e.maxHp} health${picking && !dead ? `. Target ${index + 1}` : ''}`,
       onclick: picking && !dead ? () => target(index) : null,
       onpointerenter: picking && !dead ? ev => previewOn(ev.currentTarget, index) : null,
       onfocus: picking && !dead ? ev => previewOn(ev.currentTarget, index) : null,
     },
-    dead ? h('div', { class: 'intent' }, 'Abated') : intentView(e),
-    h('span', { class: 'portrait', 'aria-hidden': 'true' }, FOE_ART[e.id] || '🏭'),
-    h('span', { class: 'fname' }, picking && !dead ? `${index + 1}. ` : '', e.name),
-    h('div', { class: 'hpbar' }, h('i', { style: `width: ${(e.hp / e.maxHp) * 100}%` }), h('span', {}, `${e.hp} / ${e.maxHp}`)),
-    h('div', { class: 'chips' }, e.block ? h('span', { class: 'chip assure', tip: 'Assurance: blocks damage.' }, `🛡 ${e.block}`) : null, statusChips(e.st, false)),
-    def.passive ? h('span', { class: 'passive' }, def.passive) : null);
+    dead ? h('div', { class: 'intent' }) : intentView(e),
+    h('div', { class: 'plate' },
+      h('div', { class: 'fname', tip: def.passive || null }, picking && !dead ? h('span', { class: 'num' }, index + 1) : null, e.name, def.passive ? h('span', { class: 'info' }, 'ⓘ') : null),
+      h('div', { class: 'bars' },
+        e.block ? h('span', { class: 'shield', tip: 'Assurance: blocks damage until its next turn.' }, e.block) : null,
+        h('div', { class: 'hpbar' }, h('i', { style: `width: ${(e.hp / e.maxHp) * 100}%` }), h('span', {}, dead ? 'Abated' : `${e.hp} / ${e.maxHp}`))),
+      h('div', { class: 'chips' }, statusChips(e.st, false))),
+    h('div', { class: 'figure', 'aria-hidden': 'true' }, h('span', {}, FOE_ART[e.id] || '🏭')));
   }));
+
+  // You, on the left.
   const p = c.p;
   const powers = Object.entries(c.powers).map(([k, n]) => h('span', { class: 'chip good', tip: powerText(k) }, `${powerName(k)}${n > 1 ? ` ×${n}` : ''}`));
-  const me = h('section', { class: 'me', 'aria-label': 'You' },
-    h('div', { class: `energy${c.energy ? '' : ' empty'}`, tip: 'Energy: cards cost energy to play. It refills each turn.', 'aria-label': `${c.energy} energy` }, `${c.energy}`),
-    h('div', { class: 'mestats' },
-      h('div', { class: 'hpbar me' }, h('i', { style: `width: ${(s.hp / s.maxHp) * 100}%` }), h('span', {}, `Credibility ${s.hp} / ${s.maxHp}`)),
-      h('div', { class: 'chips' }, p.block ? h('span', { class: 'chip assure', tip: KEYWORDS.Assurance }, `🛡 ${p.block} Assurance`) : null, statusChips(p.st, true), powers),
-      c.ducklings ? h('div', { class: 'ducklings', tip: `Ducklings: ${KEYWORDS.Ducklings}`, 'aria-label': `${c.ducklings} ducklings` }, '🐤'.repeat(Math.min(c.ducklings, 12)), c.ducklings > 3 ? h('span', { style: 'letter-spacing: 0; margin-left: 6px; font-size: 14px' }, `×${c.ducklings}`) : null) : null),
-    h('div', { class: 'piles' },
-      h('button', { type: 'button', class: 'btn small', onclick: () => { ui.overlay = 'draw'; render(); } }, `Draw ${c.draw.length}`),
-      h('button', { type: 'button', class: 'btn small', onclick: () => { ui.overlay = 'discard'; render(); } }, `Discard ${c.discard.length}`),
-      c.exhaust.length ? h('button', { type: 'button', class: 'btn small', onclick: () => { ui.overlay = 'exhaust'; render(); } }, `Retired ${c.exhaust.length}`) : null,
-      h('button', { type: 'button', class: 'btn primary', onclick: () => act({ type: 'end' }) }, 'End turn')));
+  const figure = h('div', { class: 'figure duck', 'aria-hidden': 'true' });
+  figure.innerHTML = duckSVG();
+  const flock = h('div', { class: 'flock', tip: c.ducklings ? `${c.ducklings} Ducklings: ${KEYWORDS.Ducklings}` : null, 'aria-label': c.ducklings ? `${c.ducklings} ducklings` : null });
+  flock.innerHTML = ducklingSVG().repeat(Math.min(c.ducklings, 12));
+  const hero = h('section', { class: 'hero me', 'aria-label': 'You' },
+    h('div', { class: 'plate' },
+      h('div', { class: 'fname' }, 'You', c.ducklings > 12 ? ` · ${c.ducklings} ducklings` : ''),
+      h('div', { class: 'bars' },
+        p.block ? h('span', { class: 'shield', tip: KEYWORDS.Assurance }, p.block) : null,
+        h('div', { class: 'hpbar me' }, h('i', { style: `width: ${(s.hp / s.maxHp) * 100}%` }), h('span', {}, `${s.hp} / ${s.maxHp}`))),
+      h('div', { class: 'chips' }, statusChips(p.st, true), powers)),
+    h('div', { class: 'hero-body' }, figure, flock));
+
+  // The hand, fanned along the bottom.
   const dealt = ui.lastTurn !== `${s.floor}:${c.turn}`;
   ui.lastTurn = `${s.floor}:${c.turn}`;
-  const hand = h('div', { class: `hand${dealt ? ' deal' : ''}`, 'aria-label': 'Your hand' }, c.hand.map((card, i) => {
+  const n = c.hand.length;
+  const hand = h('div', { class: `hand${dealt ? ' deal' : ''}`, 'aria-label': 'Your hand', style: `--n: ${n}` }, c.hand.map((card, i) => {
     const el = cardView(card, {
-      disabled: !E.playable(s, card), selected: ui.selected === i, onClick: ev => pickCard(i, ev.currentTarget), preview: previewText(i),
+      disabled: !E.playable(s, card), selected: ui.selected === i, preview: previewText(i),
+      // Keyboard activation; pointer presses are handled as drags (see startDrag).
+      onClick: ev => { if (ev.detail === 0) pickCard(i, ev.currentTarget); },
     });
+    const k = i - (n - 1) / 2;
+    el.style.setProperty('--k', k);
+    el.style.setProperty('--k2', k * k);
     el.style.setProperty('--i', i);
+    el.addEventListener('pointerdown', ev => startDrag(ev, i));
     return el;
   }));
-  return h('main', { class: 'combat' },
-    foes,
-    h('div', {}, h('div', { class: 'hint', role: 'status' }, ui.hint), h('div', { class: 'log' }, c.log.slice(-2).join(' ')), me),
-    hand);
+
+  const energyMax = 3 + s.relics.reduce((a, id) => a + (E.RELICS[id].energy || 0), 0);
+  return h('main', { class: `stage act${s.act} ${c.kind}` },
+    backdrop(c.kind === 'boss'),
+    h('div', { class: 'banner-line', role: 'status' }, ui.hint || c.log.slice(-1)[0] || ''),
+    h('div', { class: 'arena' }, hero, foes),
+    h('div', { class: 'hud' },
+      h('div', { class: 'left' },
+        h('div', { class: `orb${c.energy ? '' : ' empty'}`, tip: 'Energy: cards cost energy to play. It refills each turn.', 'aria-label': `${c.energy} energy` }, h('b', {}, c.energy), h('small', {}, `/${energyMax}`)),
+        h('button', { type: 'button', class: 'pile draw', 'aria-label': `Draw pile, ${c.draw.length} cards`, onclick: () => { ui.overlay = 'draw'; render(); } }, h('span', {}, c.draw.length), h('small', {}, 'Draw'))),
+      hand,
+      h('div', { class: 'right' },
+        h('button', { type: 'button', class: 'endturn', onclick: () => act({ type: 'end' }) }, 'End turn'),
+        h('div', { class: 'piles' },
+          h('button', { type: 'button', class: 'pile discard', 'aria-label': `Discard pile, ${c.discard.length} cards`, onclick: () => { ui.overlay = 'discard'; render(); } }, h('span', {}, c.discard.length), h('small', {}, 'Discard')),
+          c.exhaust.length ? h('button', { type: 'button', class: 'pile retired', 'aria-label': `Retired, ${c.exhaust.length} cards`, onclick: () => { ui.overlay = 'exhaust'; render(); } }, h('span', {}, c.exhaust.length), h('small', {}, 'Retired')) : null))),
+    aimLayer());
+}
+
+function aimLayer() {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', 'aim');
+  svg.setAttribute('aria-hidden', 'true');
+  return svg;
+}
+
+// ---------- drag to play ----------
+// Press a card and drag. Targeted cards stay above the hand and draw an arrow to the enemy under
+// the pointer; other cards follow the pointer and play when let go above the hand. A press
+// without a drag works like a click: it plays the card, or picks it for targeting.
+let drag = null;
+const living = () => s.combat.enemies.filter(e => e.hp > 0 && !e.gone);
+
+function startDrag(ev, i) {
+  if (ev.button !== 0 || drag || !s.combat) return;
+  const el = ev.currentTarget;
+  const card = s.combat.hand[i];
+  const def = E.CARDS[card.id];
+  drag = { i, el, x0: ev.clientX, y0: ev.clientY, moved: false, targeted: def.target === 'enemy', playable: E.playable(s, card), ghost: null, aim: null, over: null };
+  try { el.setPointerCapture(ev.pointerId); } catch (e) {}
+  el.addEventListener('pointermove', moveDrag);
+  el.addEventListener('pointerup', endDrag);
+  el.addEventListener('pointercancel', cancelDrag);
+}
+
+function moveDrag(ev) {
+  const d = drag;
+  if (!d) return;
+  if (!d.moved) {
+    if (Math.hypot(ev.clientX - d.x0, ev.clientY - d.y0) < 8) return;
+    d.moved = true;
+    if (!d.playable) { const def = E.CARDS[s.combat.hand[d.i].id]; flash(def.unplayable ? `${def.name} can't be played` : 'not enough energy'); cancelDrag(); return; }
+    ui.selected = null; ui.tool = null;
+    const r = d.el.getBoundingClientRect();
+    d.ghost = d.el.cloneNode(true);
+    d.ghost.classList.add('held');
+    d.ghost.style.width = `${d.el.offsetWidth}px`;
+    d.ghost.style.height = `${d.el.offsetHeight}px`;
+    d.offset = [ev.clientX - r.left, ev.clientY - r.top];
+    document.body.append(d.ghost);
+    d.line = playLine();
+    d.el.classList.add('lifted');
+    d.aim = document.querySelector('.stage .aim');
+  }
+  const W = d.el.offsetWidth, H = d.el.offsetHeight;
+  if (d.targeted) {
+    // Hold the card above the middle of the hand and aim with an arrow.
+    const hand = document.querySelector('.hand').getBoundingClientRect();
+    const hx = hand.left + hand.width / 2 - W / 2, hy = hand.top - H * 0.55;
+    d.ghost.style.transform = `translate(${hx}px, ${hy}px) scale(1.05)`;
+    const sx = hx + W / 2, sy = hy + 6;
+    const over = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('.foe:not(.dead)');
+    if (over !== d.over) {
+      d.over?.classList.remove('aimed');
+      document.querySelectorAll('.foe .preview-hit').forEach(n => n.remove());
+      d.over = over;
+      if (over) { over.classList.add('aimed'); showPreview(over, d.i, Number(over.dataset.index)); }
+    }
+    drawArrow(d.aim, sx, sy, ev.clientX, ev.clientY, !!over);
+  } else {
+    d.ghost.style.transform = `translate(${ev.clientX - d.offset[0]}px, ${ev.clientY - d.offset[1]}px) rotate(${Math.max(-8, Math.min(8, (ev.clientX - d.x0) / 30))}deg)`;
+    d.ghost.classList.toggle('ready', ev.clientY < d.line);
+  }
+}
+
+// Where a dragged card has to be let go to play: clearly above the resting tops of the cards.
+function playLine() {
+  const cards = [...document.querySelectorAll('.hand .card:not(.lifted)')].map(c => c.getBoundingClientRect().top);
+  const top = cards.length ? Math.min(...cards) : document.querySelector('.hand').getBoundingClientRect().top;
+  return top - 10;
+}
+
+function endDrag(ev) {
+  const d = drag;
+  if (!d) return;
+  if (!d.moved) { cleanupDrag(); pickCard(d.i, d.el); return; }
+  const aboveHand = ev.clientY < d.line;
+  let action = null;
+  if (d.targeted) {
+    if (d.over) action = { type: 'play', index: d.i, target: Number(d.over.dataset.index) };
+    else if (aboveHand && living().length === 1) action = { type: 'play', index: d.i, target: 0 };
+  } else if (aboveHand) action = { type: 'play', index: d.i };
+  const ghost = d.ghost;
+  cleanupDrag(action ? null : ghost);
+  if (action) act(action, ghost);
+  ghost?.remove();
+}
+
+function cancelDrag() { cleanupDrag(drag?.ghost); }
+
+function cleanupDrag(returning) {
+  const d = drag;
+  if (!d) return;
+  drag = null;
+  d.el.removeEventListener('pointermove', moveDrag);
+  d.el.removeEventListener('pointerup', endDrag);
+  d.el.removeEventListener('pointercancel', cancelDrag);
+  d.over?.classList.remove('aimed');
+  document.querySelectorAll('.foe .preview-hit').forEach(n => n.remove());
+  if (d.aim) d.aim.replaceChildren();
+  if (returning) {
+    // Glide back into the hand.
+    const r = d.el.getBoundingClientRect();
+    returning.classList.add('returning');
+    returning.style.transform = `translate(${r.left}px, ${r.top}px)`;
+    setTimeout(() => { returning.remove(); d.el.classList.remove('lifted'); }, 180);
+  } else d.el.classList.remove('lifted');
+}
+
+// A curved arrow, drawn as a trail of chevrons, from the held card to the pointer.
+function drawArrow(svg, x1, y1, x2, y2, locked) {
+  if (!svg) return;
+  const ns = 'http://www.w3.org/2000/svg';
+  const cx = x1 + (x2 - x1) * 0.2, cy = Math.min(y1, y2) - Math.abs(x2 - x1) * 0.25 - 60;
+  const at = t => [(1 - t) ** 2 * x1 + 2 * (1 - t) * t * cx + t * t * x2, (1 - t) ** 2 * y1 + 2 * (1 - t) * t * cy + t * t * y2];
+  const parts = [];
+  const steps = 16;
+  for (let k = 1; k <= steps; k++) {
+    const t = k / steps, [x, y] = at(t), [px, py] = at(t - 0.02);
+    const a = Math.atan2(y - py, x - px) * 180 / Math.PI;
+    const size = k === steps ? 16 : 5 + k * 0.45;
+    const el = document.createElementNS(ns, 'path');
+    el.setAttribute('d', k === steps ? `M ${-size} ${-size * 0.8} L ${size * 0.6} 0 L ${-size} ${size * 0.8} Z` : `M ${-size} ${-size} L 0 0 L ${-size} ${size}`);
+    el.setAttribute('transform', `translate(${x} ${y}) rotate(${a})`);
+    el.setAttribute('class', `${k === steps ? 'head' : 'chev'}${locked ? ' locked' : ''}`);
+    parts.push(el);
+  }
+  svg.replaceChildren(...parts);
+}
+
+function showPreview(el, cardIndex, index) {
+  const sim = simulate(cardIndex, index);
+  if (!sim) return;
+  el.append(h('span', { class: `preview-hit${sim.kills ? ' lethal' : ''}` }, sim.kills ? `Abates it (${sim.onTarget})` : `−${sim.onTarget}`));
 }
 
 // What playing a card would do right now, found by playing it on a copy of the state. Returns
@@ -507,9 +714,7 @@ function previewText(index) {
 function previewOn(el, index) {
   document.querySelectorAll('.foe .preview-hit').forEach(n => n.remove());
   if (ui.selected === null || index === null) return;
-  const sim = simulate(ui.selected, index);
-  if (!sim) return;
-  el.append(h('span', { class: `preview-hit${sim.kills ? ' lethal' : ''}` }, sim.kills ? `Abates it (${sim.onTarget})` : `−${sim.onTarget}`));
+  showPreview(el, ui.selected, index);
 }
 
 const POWER_NAMES = {
@@ -549,7 +754,7 @@ function rewardScreen() {
   if (r.relic) rows.push(h('div', { class: 'reward' }, h('span', {}, `🏅 ${E.RELICS[r.relic].name}: `, h('small', {}, E.RELICS[r.relic].text)), h('button', { type: 'button', class: 'btn small', onclick: () => act({ type: 'take', what: 'relic' }) }, 'Take')));
   const title = s.lastCombat ? { fight: 'Abated', elite: 'Elite abated', boss: 'Boss defeated' }[s.lastCombat.kind] : 'Choose a card';
   return h('main', { class: 'screen' },
-    h('section', { class: 'panel' }, h('h2', {}, title), rows.length ? h('div', { class: 'rewards' }, rows) : null,
+    h('section', { class: 'panel with-art' }, h('div', { class: 'medallion', 'aria-hidden': 'true' }, s.lastCombat?.kind === 'boss' ? '👑' : s.lastCombat?.kind === 'elite' ? '🔥' : '🏆'), h('h2', {}, title), rows.length ? h('div', { class: 'rewards' }, rows) : null,
       !r.cardsTaken && r.cards.length ? h('p', { style: 'margin-top: 16px' }, 'Add a card to your deck, or skip it to keep your deck lean.') : null),
     !r.cardsTaken ? h('div', { class: 'cards' }, r.cards.map((card, i) => cardView(card, { onClick: () => act({ type: 'take', what: 'card', index: i }) }))) : null,
     h('button', { type: 'button', class: 'btn primary', onclick: () => act({ type: 'continue' }) }, !r.cardsTaken && r.cards.length ? 'Skip and continue' : 'Continue'));
@@ -598,7 +803,7 @@ function selectScreen() {
 }
 
 function bossScreen() {
-  return panel('Boss relic', 'Choose one. Each is powerful, and each has a cost.',
+  return artPanel('👑', 'Boss relic', 'Choose one. Each is powerful, and each has a cost.',
     h('div', { class: 'shoprow' }, s.bossRelics.map(id => h('button', { type: 'button', class: 'ware', onclick: () => act({ type: 'choose', id }) },
       h('b', {}, `🏅 ${E.RELICS[id].name}`), h('small', {}, E.RELICS[id].text)))));
 }
@@ -614,7 +819,8 @@ function endScreen() {
   ].filter(Boolean);
   const nameInput = h('input', { id: 'sc-name', maxlength: 16, value: ui.postName ?? savedName(), placeholder: 'Your name', 'aria-label': 'Your name' });
   const posting = ui.posted;
-  return h('main', { class: 'screen' }, h('section', { class: 'panel' },
+  return h('main', { class: 'screen' }, h('section', { class: 'panel with-art' },
+    h('div', { class: 'medallion', 'aria-hidden': 'true' }, won ? (s.carbon === 0 ? '🌍' : '🏆') : '📉'),
     h('h2', {}, won ? (s.carbon === 0 ? 'Net zero. A remarkable run.' : 'You made it through Scope 3') : 'Your credibility ran out'),
     h('p', {}, won ? `You reached the end with ${s.carbon} carbon and Heat ${E.heat(s)}.` : `On floor ${s.floor} of ${E.ACT_NAMES[s.act]}, with ${s.carbon} carbon and Heat ${E.heat(s)}.`),
     h('table', { class: 'score' }, rows.map(([k, v]) => h('tr', {}, h('td', {}, k), h('td', {}, v > 0 ? `+${v}` : v))), h('tr', { class: 'total' }, h('td', {}, 'Score'), h('td', {}, sc.total))),
