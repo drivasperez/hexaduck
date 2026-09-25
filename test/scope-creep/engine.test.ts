@@ -237,6 +237,16 @@ describe('Scope Creep rules', () => {
     }
   });
 
+  it('collects unclaimed grants when leaving a reward', () => {
+    const s = fight(['car'], ['abate']);
+    foe(s).hp = 1;
+    play(s, 0, 0);
+    const gold = s.gold, reward = s.reward.gold;
+    expect(reward).toBeGreaterThan(0);
+    apply(s, { type: 'continue' });
+    expect(s.gold).toBe(gold + reward);
+  });
+
   it('raises the price of card removal each time at the shop', () => {
     const s = onMap();
     s.gold = 500;

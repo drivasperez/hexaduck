@@ -136,7 +136,7 @@ b.kw { color: var(--duck); font-weight: 700; text-decoration: underline dotted r
 .hpbar { position: relative; height: 18px; border-radius: 9px; background: rgba(0, 0, 0, 0.35); overflow: hidden; font-size: 12px; font-weight: 700; }
 .hpbar i { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, #C9463A, #E8603C); }
 .hpbar.me i { background: linear-gradient(90deg, #3E9C7A, #5BC49A); }
-.hpbar span { position: relative; display: block; text-align: center; line-height: 18px; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6); }
+.hpbar span { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; line-height: 1; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6); }
 .chips { display: flex; flex-wrap: wrap; gap: 4px; }
 .chip { font-size: 12px; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: rgba(255, 255, 255, 0.1); cursor: help; }
 .chip.assure { background: rgba(94, 200, 224, 0.25); color: #D5F4FB; }
@@ -193,4 +193,20 @@ b.kw { color: var(--duck); font-weight: 700; text-decoration: underline dotted r
   .bar { gap: 6px 12px; font-size: 14px; }
   .me { grid-template-columns: auto 1fr; }
   .me .mestats { grid-column: 1 / -1; order: 3; }
+}
+
+/* ---------- previews and motion ---------- */
+.card .preview { align-self: stretch; text-align: center; font-weight: 700; font-size: 13px; color: #0F3B4C; background: rgba(255, 210, 63, 0.55); border-radius: 6px; padding: 1px 4px; }
+.foe .preview-hit { position: absolute; top: 44%; left: 50%; transform: translate(-50%, -50%); padding: 3px 10px; border-radius: 999px; background: rgba(232, 96, 60, 0.92); color: #fff; font-weight: 700; font-size: 16px; pointer-events: none; white-space: nowrap; }
+.foe .preview-hit.lethal { background: var(--duck); color: #0F3B4C; }
+.hand.deal .card { animation: deal 0.32s ease-out both; animation-delay: calc(var(--i) * 45ms); }
+@keyframes deal { from { transform: translateY(60px) rotate(-4deg); opacity: 0; } }
+.shake { animation: shake 0.32s ease-out; }
+@keyframes shake { 20% { transform: translateX(-6px); } 45% { transform: translateX(5px); } 70% { transform: translateX(-3px); } }
+.ouch { animation: ouch 0.45s ease-out; }
+@keyframes ouch { 25% { background: rgba(232, 96, 60, 0.35); border-color: var(--danger); } }
+.card.ghost { position: fixed; z-index: 40; margin: 0; pointer-events: none; transition: transform 0.4s ease-in, opacity 0.4s ease-in; }
+.card.ghost.go { transform: translateY(-140px) scale(0.75) rotate(4deg); opacity: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .hand.deal .card, .shake, .ouch { animation: none; }
 }

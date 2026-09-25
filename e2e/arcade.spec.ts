@@ -186,3 +186,12 @@ test('a finished Scope Creep run can be posted after a reload, and the server ch
   expect(again.status()).toBe(409);
   expect(errors).toEqual([]);
 });
+
+test('a Scope Creep save from older rules is explained rather than silently lost', async ({ page }) => {
+  await page.goto('/scope-creep/');
+  await page.evaluate(v => localStorage.setItem('scope-creep-run', JSON.stringify({ v, runId: null, seed: 1, actions: [] })), VERSION - 1);
+  await page.reload();
+  await expect(page.getByText(/has been updated since your last run/)).toBeVisible();
+  await expect(page.getByRole('button', { name: /Continue/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'New run' })).toBeVisible();
+});

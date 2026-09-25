@@ -5,6 +5,7 @@
 import * as E from './engine.js';
 import { KEYWORDS } from './cards.js';
 import { createLeaderboard, savedName } from '/shared/leaderboard.js';
+import { Sound } from './audio.js';
 
 const SAVE_KEY = 'scope-creep-run';
 const app = document.getElementById('app');
@@ -37,15 +38,17 @@ let s = null;      // the replayed state
 const ui = { view: 'title', selected: null, tool: null, picks: [], overlay: null, posted: null, hint: '' };
 
 // ---------- saving ----------
+// Returns the saved run replayed, or { outdated: true } if it was saved under older rules.
 function loadSave() {
+  let raw;
+  try { raw = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null'); } catch (e) { return null; }
+  if (!raw) return null;
+  if (raw.v !== E.VERSION) return { outdated: true };
   try {
-    const raw = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
-    if (!raw || raw.v !== E.VERSION) return null;
-    const state = E.replay(raw.seed, raw.actions);
-    return { raw, state };
+    return { raw, state: E.replay(raw.seed, raw.actions) };
   } catch (e) {
     console.warn('could not restore the saved run', e);
-    return null;
+    return { outdated: true };
   }
 }
 function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) {} }
@@ -67,8 +70,9 @@ async function startRun() {
 }
 
 // ---------- actions ----------
-function act(action) {
+function act(action, from = null) {
   const before = snapshot();
+  const ghost = from ? { rect: from.getBoundingClientRect(), node: from.cloneNode(true) } : null;
   try {
     E.apply(s, action);
   } catch (e) {
@@ -81,6 +85,33 @@ function act(action) {
   if (s.screen !== 'select') ui.picks = [];
   render();
   pops(before);
+  sounds(before, action);
+  if (ghost) flyAway(ghost);
+}
+
+// A played card lifts off from where it was and fades.
+function flyAway({ rect, node }) {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  node.classList.add('ghost');
+  Object.assign(node.style, { left: `${rect.left}px`, top: `${rect.top}px`, width: `${rect.width}px`, height: `${rect.height}px` });
+  document.body.append(node);
+  requestAnimationFrame(() => node.classList.add('go'));
+  setTimeout(() => node.remove(), 450);
+}
+
+function sounds(before, action) {
+  if (s.screen === 'gameover') return Sound.fx('gameover');
+  if (s.screen === 'victory') return Sound.fx('victory');
+  if (s.screen === 'reward' && before.screen === 'combat') return Sound.fx('reward');
+  if (action.type === 'play' || action.type === 'tool') Sound.fx('card');
+  const c = s.combat;
+  if (c && [...before.foes].some(([uid, was]) => { const e = c.enemies.find(x => x.uid === uid); return e && e.hp + e.block < was; })) Sound.fx('hit');
+  if (s.hp < before.hp) Sound.fx('hurt');
+  else if (s.hp > before.hp) Sound.fx('heal');
+  if (c && c.p.block > before.block && action.type !== 'end') Sound.fx('block');
+  if (E.heat(s) > before.heat) Sound.fx('heat');
+  else if (s.carbon > before.carbon) Sound.fx('emit');
+  if (c && c.ducklings > before.ducklings) Sound.fx('duck');
 }
 
 function flash(text) {
@@ -92,7 +123,7 @@ function flash(text) {
 // Floating numbers for what the last action changed.
 function snapshot() {
   const c = s.combat;
-  return { hp: s.hp, carbon: s.carbon, block: c?.p.block ?? 0, foes: new Map((c?.enemies || []).map(e => [e.uid, e.hp + e.block])) };
+  return { hp: s.hp, carbon: s.carbon, heat: E.heat(s), screen: s.screen, block: c?.p.block ?? 0, ducklings: c?.ducklings ?? 0, foes: new Map((c?.enemies || []).map(e => [e.uid, e.hp + e.block])) };
 }
 function pops(before) {
   const c = s.combat;
@@ -101,12 +132,19 @@ function pops(before) {
     const was = before.foes.get(e.uid);
     if (was === undefined) continue;
     const lost = was - (e.hp + e.block);
-    if (lost > 0) pop(document.querySelector(`[data-uid="${e.uid}"]`), `−${lost}`);
+    const el = document.querySelector(`[data-uid="${e.uid}"]`);
+    if (lost > 0) { pop(el, `−${lost}`); jolt(el, 'shake'); }
   }
   const me = document.querySelector('.me');
-  if (s.hp < before.hp) pop(me, `−${before.hp - s.hp}`);
+  if (s.hp < before.hp) { pop(me, `−${before.hp - s.hp}`); jolt(me, 'ouch'); }
   if (s.carbon > before.carbon) pop(document.querySelector('.heat'), `+${s.carbon - before.carbon} CO₂`, 'smoke');
   if (s.carbon < before.carbon) pop(document.querySelector('.heat'), `−${before.carbon - s.carbon} CO₂`, 'green');
+}
+function jolt(el, cls) {
+  if (!el) return;
+  el.classList.remove(cls);
+  void el.offsetWidth;
+  el.classList.add(cls);
 }
 function pop(el, text, cls = '') {
   if (!el) return;
@@ -144,7 +182,7 @@ function rich(text) {
   return out;
 }
 
-function cardView(card, { onClick, disabled, selected, price, extra } = {}) {
+function cardView(card, { onClick, disabled, selected, price, extra, preview } = {}) {
   const def = E.CARDS[card.id];
   const cost = E.cardCost(card);
   const typeName = def.type[0].toUpperCase() + def.type.slice(1);
@@ -161,6 +199,7 @@ function cardView(card, { onClick, disabled, selected, price, extra } = {}) {
   h('span', { class: 'type' }, typeName),
   h('span', { class: 'text' }, rich(def.text(card.up))),
   h('span', { class: 'art', 'aria-hidden': 'true' }, ART[card.id] || ''),
+  preview ? h('span', { class: 'preview', tip: 'What this card would do right now, with every modifier counted.' }, preview) : null,
   ['uncommon', 'rare'].includes(def.rarity) ? h('span', { class: `rarity ${def.rarity}`, tip: def.rarity }) : null,
   price !== undefined ? h('span', { class: 'price' }, `${price} £`) : null);
 }
@@ -186,6 +225,7 @@ function topBar() {
       onclick: () => id && useTool(slot),
     }, id ? TOOL_ICON[id] : ''))),
     h('button', { type: 'button', class: 'btn small', onclick: () => { ui.overlay = 'deck'; render(); } }, `Deck ${s.deck.length}`),
+    h('button', { type: 'button', class: 'btn small', 'aria-label': Sound.muted ? 'Unmute' : 'Mute', tip: 'Sound on or off (M)', onclick: () => { Sound.toggle(); render(); } }, Sound.muted ? '🔇' : '🔊'),
     h('button', { type: 'button', class: 'btn small', onclick: () => { ui.overlay = 'menu'; render(); } }, 'Menu'),
   );
   const relics = h('div', { class: 'relics', 'aria-label': 'Relics' }, s.relics.map(id => h('span', { class: `relic${E.RELICS[id].rarity === 'boss' ? ' boss' : ''}`, tip: E.RELICS[id].text, tabindex: 0 }, E.RELICS[id].name)));
@@ -204,6 +244,7 @@ function render() {
   const scrollY = window.scrollY;
   app.replaceChildren();
   Board.button.hidden = !(ui.view === 'title' || s?.screen === 'gameover' || s?.screen === 'victory');
+  Sound.mood(!s || ui.view === 'title' ? 'map' : s.screen === 'combat' ? s.combat.kind === 'fight' ? 'fight' : s.combat.kind : ['gameover', 'victory'].includes(s.screen) ? 'quiet' : 'map');
   if (ui.view === 'title' || !s) { app.append(titleScreen()); return; }
   if (ui.view === 'how') { app.append(howScreen()); return; }
   app.append(...topBar());
@@ -217,11 +258,14 @@ function render() {
 }
 
 function titleScreen() {
-  const existing = loadSave();
+  let existing = loadSave();
+  const outdated = existing?.outdated;
+  if (outdated) existing = null;
   const finished = existing && ['gameover', 'victory'].includes(existing.state.screen);
   return h('main', { class: 'screen title' },
     h('h1', {}, 'Scope Creep'),
     h('p', { class: 'lede' }, 'A deckbuilder about ducks and emissions accounting. Climb three scopes, keep your Credibility, and watch your carbon: power now makes every later fight harder.'),
+    outdated ? h('p', { class: 'lede', style: 'color: var(--duck)' }, 'Scope Creep has been updated since your last run, so that run can\'t be restored. Sorry! A new run awaits.') : null,
     h('div', { class: 'actions' },
       existing && !finished
         ? h('button', { type: 'button', class: 'btn primary', onclick: () => { save = existing.raw; s = existing.state; ui.view = 'run'; render(); } }, `Continue (Act ${existing.state.act}, floor ${existing.state.floor})`)
@@ -385,6 +429,8 @@ function combatScreen() {
       type: picking && !dead ? 'button' : null,
       'aria-label': `${e.name}, ${e.hp} of ${e.maxHp} health${picking && !dead ? `. Target ${index + 1}` : ''}`,
       onclick: picking && !dead ? () => target(index) : null,
+      onpointerenter: picking && !dead ? ev => previewOn(ev.currentTarget, index) : null,
+      onfocus: picking && !dead ? ev => previewOn(ev.currentTarget, index) : null,
     },
     dead ? h('div', { class: 'intent' }, 'Abated') : intentView(e),
     h('span', { class: 'portrait', 'aria-hidden': 'true' }, FOE_ART[e.id] || '🏭'),
@@ -406,13 +452,64 @@ function combatScreen() {
       h('button', { type: 'button', class: 'btn small', onclick: () => { ui.overlay = 'discard'; render(); } }, `Discard ${c.discard.length}`),
       c.exhaust.length ? h('button', { type: 'button', class: 'btn small', onclick: () => { ui.overlay = 'exhaust'; render(); } }, `Retired ${c.exhaust.length}`) : null,
       h('button', { type: 'button', class: 'btn primary', onclick: () => act({ type: 'end' }) }, 'End turn')));
-  const hand = h('div', { class: 'hand', 'aria-label': 'Your hand' }, c.hand.map((card, i) => cardView(card, {
-    disabled: !E.playable(s, card), selected: ui.selected === i, onClick: () => pickCard(i),
-  })));
+  const dealt = ui.lastTurn !== `${s.floor}:${c.turn}`;
+  ui.lastTurn = `${s.floor}:${c.turn}`;
+  const hand = h('div', { class: `hand${dealt ? ' deal' : ''}`, 'aria-label': 'Your hand' }, c.hand.map((card, i) => {
+    const el = cardView(card, {
+      disabled: !E.playable(s, card), selected: ui.selected === i, onClick: ev => pickCard(i, ev.currentTarget), preview: previewText(i),
+    });
+    el.style.setProperty('--i', i);
+    return el;
+  }));
   return h('main', { class: 'combat' },
     foes,
     h('div', {}, h('div', { class: 'hint', role: 'status' }, ui.hint), h('div', { class: 'log' }, c.log.slice(-2).join(' ')), me),
     hand);
+}
+
+// What playing a card would do right now, found by playing it on a copy of the state. Returns
+// the damage it deals (to `target`, or to everyone for cards that hit several enemies) and the
+// Assurance it gives.
+function simulate(index, target) {
+  const card = s.combat.hand[index];
+  if (!card || !E.playable(s, card)) return null;
+  const copy = JSON.parse(JSON.stringify(s));
+  const before = copy.combat.enemies.map(e => (e.hp > 0 && !e.gone ? e.hp + e.block : 0));
+  const block = copy.combat.p.block;
+  try { E.apply(copy, { type: 'play', index, target }); } catch (e) { return null; }
+  const after = copy.combat ? copy.combat.enemies.map(e => (e.hp > 0 && !e.gone ? e.hp + e.block : 0)) : before.map(() => 0);
+  const living = s.combat.enemies.filter(e => e.hp > 0 && !e.gone);
+  const perEnemy = before.map((b, i) => Math.max(0, b - (after[i] ?? 0)));
+  const t = living[target ?? 0];
+  const onTarget = t ? perEnemy[s.combat.enemies.indexOf(t)] : 0;
+  return { total: perEnemy.reduce((a, b) => a + b, 0), onTarget, block: copy.combat ? Math.max(0, copy.combat.p.block - block) : 0, kills: t && onTarget >= t.hp + t.block };
+}
+
+function previewText(index) {
+  const card = s.combat.hand[index];
+  const def = E.CARDS[card.id];
+  if (def.unplayable || !E.playable(s, card)) return null;
+  const living = s.combat.enemies.filter(e => e.hp > 0 && !e.gone);
+  // A targeted card can do different things to different enemies (Measured, Exposed...).
+  const sims = def.target === 'enemy' ? living.map((_, t) => simulate(index, t)).filter(Boolean) : [simulate(index)].filter(Boolean);
+  if (!sims.length) return null;
+  const sim = sims[0];
+  const parts = [];
+  if (def.target === 'enemy') {
+    const lo = Math.min(...sims.map(x => x.onTarget)), hi = Math.max(...sims.map(x => x.onTarget));
+    if (hi) parts.push(lo === hi ? `⚔ ${hi}` : `⚔ ${lo}–${hi}`);
+  } else if (sim.total) parts.push(`⚔ ${sim.total}${def.target === 'all' ? ' total' : ''}`);
+  if (sim.block) parts.push(`🛡 ${sim.block}`);
+  return parts.length ? parts.join('  ') : null;
+}
+
+// With a card chosen, hovering an enemy shows exactly what it would take.
+function previewOn(el, index) {
+  document.querySelectorAll('.foe .preview-hit').forEach(n => n.remove());
+  if (ui.selected === null || index === null) return;
+  const sim = simulate(ui.selected, index);
+  if (!sim) return;
+  el.append(h('span', { class: `preview-hit${sim.kills ? ' lethal' : ''}` }, sim.kills ? `Abates it (${sim.onTarget})` : `−${sim.onTarget}`));
 }
 
 const POWER_NAMES = {
@@ -423,14 +520,14 @@ const POWER_CARD = { auditTrail: 'auditTrail', flightFormation: 'flightFormation
 const powerName = k => POWER_NAMES[k] || k;
 const powerText = k => (POWER_CARD[k] ? E.CARDS[POWER_CARD[k]].text(false) : '');
 
-function pickCard(i) {
+function pickCard(i, el = document.querySelectorAll('.hand .card')[i]) {
   const card = s.combat.hand[i];
   const def = E.CARDS[card.id];
   ui.tool = null;
   if (!E.playable(s, card)) { flash(def.unplayable ? `${def.name} can't be played` : 'not enough energy'); return; }
-  if (def.target !== 'enemy') { act({ type: 'play', index: i }); return; }
+  if (def.target !== 'enemy') { act({ type: 'play', index: i }, el); return; }
   const living = s.combat.enemies.filter(e => e.hp > 0 && !e.gone);
-  if (living.length === 1) { act({ type: 'play', index: i, target: 0 }); return; }
+  if (living.length === 1) { act({ type: 'play', index: i, target: 0 }, el); return; }
   ui.selected = ui.selected === i ? null : i;
   ui.hint = ui.selected === null ? '' : `Choose a target for ${E.cardName(card)}.`;
   render();
@@ -438,7 +535,7 @@ function pickCard(i) {
 
 function target(index) {
   if (ui.tool !== null) act({ type: 'tool', slot: ui.tool, target: index });
-  else if (ui.selected !== null) act({ type: 'play', index: ui.selected, target: index });
+  else if (ui.selected !== null) act({ type: 'play', index: ui.selected, target: index }, document.querySelectorAll('.hand .card')[ui.selected]);
 }
 
 // ---------- rewards, shop, selection ----------
@@ -593,8 +690,11 @@ document.addEventListener('pointerover', e => showTip(e.target.closest?.('[data-
 document.addEventListener('focusin', e => showTip(e.target.closest?.('[data-tip]')));
 document.addEventListener('scroll', () => { tip.hidden = true; }, true);
 
+addEventListener('pointerdown', () => Sound.unlock(), true);
 addEventListener('keydown', e => {
+  Sound.unlock();
   if (e.target instanceof HTMLInputElement || Board.isOpen()) return;
+  if (e.key === 'm' || e.key === 'M') { Sound.toggle(); if (s) render(); return; }
   if (e.key === 'Escape') {
     if (ui.overlay) { ui.overlay = null; render(); }
     else if (ui.selected !== null || ui.tool !== null) { ui.selected = null; ui.tool = null; ui.hint = ''; render(); }

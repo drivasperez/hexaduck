@@ -11,7 +11,8 @@ import { CARDS, canUpgrade, cardCost, cardName, cardRetires, pool } from './card
 import { ACT_NAMES, ENCOUNTERS, FOES } from './foes.js';
 import { EVENTS, MANDATES, RELICS, TOOLS } from './extras.js';
 
-export const VERSION = 1;
+// Bump whenever the rules change in a way that would make an existing run replay differently.
+export const VERSION = 2;
 export const START_HP = 72;
 export const HAND_SIZE = 5;
 export const MAX_HAND = 10;
