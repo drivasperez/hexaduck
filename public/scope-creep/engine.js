@@ -462,12 +462,14 @@ function drawCards(s, n) {
   for (let i = 0; i < n; i++) {
     if (!c.draw.length) {
       if (!c.discard.length) return;
+      note({ k: 'shuffle', n: c.discard.length });
       c.draw = shuffle(s, 'combat', c.discard);
       c.discard = [];
     }
     const card = c.draw.pop();
     if (c.hand.length >= MAX_HAND) { c.discard.push(card); continue; }
     c.hand.push(card);
+    note({ k: 'draw', uid: card.uid });
     CARDS[card.id].onDraw?.(api(s));
   }
 }

@@ -377,3 +377,11 @@ b.kw { color: var(--duck); font-weight: 700; text-decoration: underline dotted r
 .foe .pop { top: 58%; } .hero .pop { top: 48%; }
 .pop.small { font-size: 22px; }
 .stage.resolving .hand .card { translate: calc(var(--k) * var(--spread)) calc(var(--ch) * 0.9); opacity: 0; transition: translate 0.3s ease-in, opacity 0.3s; }
+
+/* ---------- drawing cards ---------- */
+.hand .card.incoming { opacity: 0; }
+.card.flying { position: fixed; z-index: 85; margin: 0; pointer-events: none; transition: none; box-shadow: 0 0 0 3px var(--frame), 0 0 0 6px rgba(111, 209, 230, 0.8), 0 16px 30px rgba(0, 0, 0, 0.5); }
+.hand .card.landed { animation: landed 0.35s ease-out; }
+@keyframes landed { 0% { filter: brightness(1.35) drop-shadow(0 0 14px rgba(111, 209, 230, 0.9)); } }
+.pile.give { animation: give 0.22s ease-out; }
+@keyframes give { 40% { scale: 1.12; border-color: var(--sky); box-shadow: 3px 3px 0 #0E2E38, 6px 6px 0 #0B2530, 0 0 20px rgba(111, 209, 230, 0.8); } }

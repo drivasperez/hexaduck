@@ -345,3 +345,51 @@ test('Scope Creep shows blocked hits and plays out the end of a fight', async ({
   await expect(page.getByRole('heading', { name: /Abated|Boss defeated/ })).toBeVisible({ timeout: 5000 });
   expect(errors).toEqual([]);
 });
+
+// Player feedback: cards drawn mid-turn just appeared in the hand, easy to miss.
+test('Scope Creep flies drawn cards out of the draw pile into the hand', async ({ page }) => {
+  test.skip(test.info().project.name === 'mobile', 'the same code runs on both; one run is enough');
+  const errors = collectErrors(page);
+  // Find, in a simulated run, a card play in combat that draws a card.
+  let moment: any = null;
+  for (let seed = 1; seed < 40 && !moment; seed++) {
+    const player = plannerPlayer(seed);
+    const st: any = newRun(seed);
+    const actions: any[] = [];
+    while (!['gameover', 'victory'].includes(st.screen) && !moment) {
+      const a = player(st);
+      const events: any[] = [];
+      const n = actions.length;
+      const drawBefore = st.combat?.draw.length;
+      applyEngine(st, a, events);
+      actions.push(a);
+      if (a.type === 'play' && st.screen === 'combat' && events.some(e => e.k === 'draw') && !events.some(e => e.k === 'shuffle') && drawBefore > 0) {
+        moment = { save: { v: VERSION, runId: null, seed, actions: actions.slice(0, n) }, action: a, drawBefore };
+      }
+    }
+  }
+  expect(moment).toBeTruthy();
+  await page.goto('/scope-creep/');
+  await page.evaluate(sv => localStorage.setItem('scope-creep-run', JSON.stringify(sv)), moment.save);
+  await page.reload();
+  await page.getByRole('button', { name: /Continue \(/ }).click();
+  await expect(page.locator('.hand .card').first()).toBeVisible();
+  await page.waitForTimeout(700);
+  const pile = page.locator('.pile.draw span');
+  await expect(pile).toHaveText(String(moment.drawBefore));
+  await page.evaluate(() => {
+    new MutationObserver(() => { if (document.querySelector('.card.flying')) (window as any).flew = true; })
+      .observe(document.body, { childList: true, subtree: true });
+  });
+  await page.locator('.hand .card').nth(moment.action.index).focus();
+  await page.keyboard.press('Enter');
+  if (moment.action.target !== undefined && await page.locator('.foe.targetable').count()) {
+    await page.locator(`.foe.targetable[data-index="${moment.action.target}"]`).click();
+  }
+  await expect.poll(() => page.evaluate(() => !!(window as any).flew)).toBe(true);
+  // It lands: nothing is left flying or hidden, and the pile has counted down.
+  await expect(page.locator('.card.flying')).toHaveCount(0);
+  await expect(page.locator('.hand .card.incoming')).toHaveCount(0);
+  await expect(pile).not.toHaveText(String(moment.drawBefore));
+  expect(errors).toEqual([]);
+});

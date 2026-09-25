@@ -356,4 +356,21 @@ describe('Scope Creep events', () => {
     for (const act of actions) { apply(a, act); applyWithEvents(b, act, []); }
     expect(JSON.stringify(b)).toBe(JSON.stringify(a));
   });
+
+  it('notes each card drawn, and a reshuffle before drawing from it', () => {
+    const s = fight(['cow'], ['survey']);
+    s.combat.draw = [{ uid: 9001, id: 'abate', up: false }];
+    s.combat.discard = [{ uid: 9002, id: 'hedge', up: false }];
+    const first: any[] = [];
+    applyWithEvents(s, { type: 'play', index: 0, target: 0 }, first);
+    expect(first.filter(e => e.k === 'draw')).toEqual([{ k: 'draw', uid: 9001 }]);
+    // Now the draw pile is empty, so the next draw reshuffles the discards first.
+    s.combat.hand = [{ uid: 9003, id: 'survey', up: false }];
+    s.combat.energy = 3;
+    const second: any[] = [];
+    applyWithEvents(s, { type: 'play', index: 0, target: 0 }, second);
+    const kinds = second.map(e => e.k);
+    expect(kinds).toContain('shuffle');
+    expect(kinds.indexOf('shuffle')).toBeLessThan(kinds.indexOf('draw'));
+  });
 });

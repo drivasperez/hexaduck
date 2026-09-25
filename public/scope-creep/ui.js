@@ -91,13 +91,60 @@ function act(action, from = null) {
   // Enemy turns and the end of a fight are played out on screen before the result is shown.
   if (events.some(e => ['act', 'win', 'defeat', 'pecks', 'liability'].includes(e.k)) && document.querySelector('.stage')) {
     ui.busy = true;
-    playback(events).finally(() => { ui.busy = false; render(); });
+    playback(events).finally(() => { ui.busy = false; render(); animateDraws(events); });
     return;
   }
   render();
+  animateDraws(events);
   pops(before);
   sounds(before, action);
   if (action.type === 'play' && s.combat && before.attack) jolt(document.querySelector('.hero'), 'strike');
+}
+
+// ---------- drawing ----------
+// Cards drawn by the last action fly out of the draw pile into their places in the hand, one
+// after another, while the pile counts down. A reshuffle is called out on the pile first.
+function animateDraws(events) {
+  const pile = document.querySelector('.pile.draw');
+  const handEl = document.querySelector('.hand');
+  if (!pile || !handEl || !s.combat) return;
+  const drawn = events.filter(e => e.k === 'draw').map(e => e.uid);
+  const shuffled = events.some(e => e.k === 'shuffle');
+  const cards = [...handEl.querySelectorAll('.card')];
+  const targets = drawn.map(uid => cards[s.combat.hand.findIndex(c => c.uid === uid)]).filter(Boolean);
+  if (!targets.length) return;
+  handEl.classList.remove('deal');
+  const count = pile.querySelector('span');
+  const finalCount = s.combat.draw.length;
+  if (count) count.textContent = finalCount + targets.length;
+  if (shuffled) { pop(pile, 'Shuffled', 'block small'); jolt(document.querySelector('.pile.discard'), 'shake'); }
+  const from = pile.getBoundingClientRect();
+  const quick = reduced();
+  const step = quick ? 0 : Math.min(110, 500 / targets.length);
+  const lead = shuffled && !quick ? 350 : 60;
+  targets.forEach((el, i) => {
+    el.classList.add('incoming');
+    const to = el.getBoundingClientRect();
+    setTimeout(() => {
+      if (count) count.textContent = Math.max(finalCount, Number(count.textContent) - 1);
+      jolt(pile, 'give');
+      Sound.fx('card');
+      if (quick) { el.classList.remove('incoming'); return; }
+      // A copy flies from the pile to where the card sits in the hand, then hands over to it.
+      const fly = el.cloneNode(true);
+      fly.classList.remove('incoming');
+      fly.classList.add('flying');
+      Object.assign(fly.style, { left: `${to.left}px`, top: `${to.top}px`, width: `${el.offsetWidth}px`, height: `${el.offsetHeight}px` });
+      document.body.append(fly);
+      const dx = from.left + from.width / 2 - (to.left + to.width / 2), dy = from.top + from.height / 2 - (to.top + to.height / 2);
+      const anim = fly.animate([
+        { transform: `translate(${dx}px, ${dy}px) scale(0.32) rotate(-24deg)`, opacity: 0.3 },
+        { transform: `translate(${dx * 0.35}px, ${dy * 0.35 - 70}px) scale(0.9) rotate(-6deg)`, opacity: 1, offset: 0.6 },
+        { transform: 'none', opacity: 1 },
+      ], { duration: 420, easing: 'cubic-bezier(0.25, 0.8, 0.35, 1)' });
+      anim.onfinish = () => { fly.remove(); el.classList.remove('incoming'); jolt(el, 'landed'); };
+    }, lead + i * step);
+  });
 }
 
 // ---------- playback ----------
